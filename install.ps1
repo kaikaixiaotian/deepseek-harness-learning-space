@@ -1,7 +1,7 @@
 ﻿# install.ps1 — dsh-learning-space one-shot installer (Windows)
 #
 # One command (from any directory):
-#   powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest 'https://github.com/<OWNER>/dsh-learning-space/raw/main/install.ps1' -OutFile install.ps1; .\install.ps1"
+#   powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest 'https://github.com/kaikaixiaotian/deepseek-harness-learning-space/raw/main/install.ps1' -OutFile install.ps1; .\install.ps1"
 #
 # It does four things:
 #   1. get the source (zip download first — faster and more reliable than
@@ -21,7 +21,7 @@
 # Then restart dsh web (plugin-set changes take effect on restart).
 
 param(
-    [string]$Source = 'https://github.com/<OWNER>/dsh-learning-space',
+    [string]$Source = 'https://github.com/kaikaixiaotian/deepseek-harness-learning-space',
     [string]$Version = 'latest',
     [string]$DshHome = $env:DSH_HOME,
     [string]$Profile = 'web'
@@ -82,7 +82,7 @@ function Invoke-DshPlugin([string[]]$PluginArgs) {
 # -Source, prefer the checkout we are standing in instead of the default URL.
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $inRepo = (Test-Path (Join-Path $scriptDir '.git')) -or (Test-Path (Join-Path $scriptDir 'packages\dsh-learning\package.json'))
-if ($Source -eq 'https://github.com/<OWNER>/dsh-learning-space' -and $inRepo) {
+if ($Source -eq 'https://github.com/kaikaixiaotian/deepseek-harness-learning-space' -and $inRepo) {
     $Source = $scriptDir
 }
 
@@ -91,7 +91,7 @@ NextStep
 $isRemote = $Source -match '^(https?://|git@|ssh://|github:)'
 if ($isRemote) {
     if ($Source -match '<OWNER>') {
-        throw 'install.ps1 里的默认仓库地址还是占位符：把脚本中的 <OWNER> 换成你的 GitHub 用户名，或用 -Source 指定真实地址后重试'
+        throw 'install.ps1 的默认仓库地址无效（仍含 <OWNER> 占位符）：请用 -Source 指定真实的 GitHub 仓库地址后重试'
     }
     $repoUrl = $Source.TrimEnd('/').TrimEnd('.git')
 

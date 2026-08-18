@@ -31,12 +31,12 @@
 
 需要先装好两样：**Node.js ≥ 20**、**git**（pnpm 和 dsh CLI 安装时如果缺，脚本会提示你怎么装）。
 
-> 先把这份代码推到你的 GitHub 仓库，然后把下面命令里的 `<OWNER>` 换成你的用户名。
+> 项目仓库：[kaikaixiaotian/deepseek-harness-learning-space](https://github.com/kaikaixiaotian/deepseek-harness-learning-space)
 
 ### 方式一：一条命令安装（推荐）
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest 'https://github.com/<OWNER>/dsh-learning-space/raw/main/install.ps1' -OutFile install.ps1; .\install.ps1"
+powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest 'https://github.com/kaikaixiaotian/deepseek-harness-learning-space/raw/main/install.ps1' -OutFile install.ps1; .\install.ps1"
 ```
 
 这一条命令会：把仓库下载到 `%USERPROFILE%\dsh-learning-space` → 安装学习模式 → 构建并注册两个插件包 → 完成配置。**重复运行不会重复安装**，以后升级也直接重跑它。
@@ -55,7 +55,7 @@ powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest 'https://github.c
 ### 方式二：克隆到本地再装（开发/升级用）
 
 ```powershell
-git clone https://github.com/<OWNER>/dsh-learning-space "$env:USERPROFILE\dsh-learning-space"
+git clone https://github.com/kaikaixiaotian/deepseek-harness-learning-space "$env:USERPROFILE\dsh-learning-space"
 cd "$env:USERPROFILE\dsh-learning-space"
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
@@ -67,8 +67,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 不想装学习模式、只想要学习空间的界面？两条命令：
 
 ```powershell
-dsh plugin --profile web add "github:<OWNER>/dsh-learning-space#path:packages/dsh-learning"
-dsh plugin --profile web add "github:<OWNER>/dsh-learning-space#path:packages/dsh-client-ui-learning"
+dsh plugin --profile web add "github:kaikaixiaotian/deepseek-harness-learning-space#path:packages/dsh-learning"
+dsh plugin --profile web add "github:kaikaixiaotian/deepseek-harness-learning-space#path:packages/dsh-client-ui-learning"
 ```
 
 第一次装的时候 pnpm 会要求你确认允许这两个包在安装时执行构建脚本——把下面两行加到 `%USERPROFILE%\.dsh\profiles\web\pnpm-workspace.yaml`（没有就新建）后重试即可：
