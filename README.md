@@ -29,11 +29,23 @@
 
 ## 安装
 
-需要先装好三样：**Node.js ≥ 20**、**pnpm**、**git**（dsh CLI 会随仓库脚本自动用到，未安装时按提示装一下即可）。
+需要先装好两样：**Node.js ≥ 20**、**git**（pnpm 和 dsh CLI 安装时如果缺，脚本会提示你怎么装）。
 
-> 仓库地址里的 `<OWNER>` 请替换成你自己的 GitHub 用户名（仓库建好后）。
+> 先把这份代码推到你的 GitHub 仓库，然后把下面命令里的 `<OWNER>` 换成你的用户名。
 
-### 方式一：克隆 + 一键安装（推荐）
+### 方式一：一条命令安装（推荐）
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest 'https://github.com/<OWNER>/dsh-learning-space/raw/main/install.ps1' -OutFile install.ps1; .\install.ps1"
+```
+
+这一条命令会：把仓库下载到 `%USERPROFILE%\dsh-learning-space` → 安装学习模式 → 构建并注册两个插件包 → 完成配置。**重复运行不会重复安装**，以后升级也直接重跑它。
+
+装完**重启 dsh web**，新开会话就能在模式选择器看到「学习模式」。
+
+> 当前目录会留下一个 `install.ps1`（就是下载的脚本），装完删掉即可。
+
+### 方式二：克隆到本地再装（开发/升级用）
 
 ```powershell
 git clone https://github.com/<OWNER>/dsh-learning-space "$env:USERPROFILE\dsh-learning-space"
@@ -41,13 +53,11 @@ cd "$env:USERPROFILE\dsh-learning-space"
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-脚本会完成全部三步：安装学习模式、构建两个插件包、注册到你的 DSH 配置里。**重复运行不会重复安装**，以后升级也直接重跑它。
+效果和方式一完全一样，只是仓库已经在本地，方便你改代码或查看内容。
 
-装完**重启 dsh web**，新开会话就能在模式选择器看到「学习模式」。
+### 方式三：免克隆，只装插件
 
-### 方式二：免克隆，直接装
-
-不想克隆整个仓库？两条命令直接装插件：
+不想装学习模式、只想要学习空间的界面？两条命令：
 
 ```powershell
 dsh plugin --profile web add "github:<OWNER>/dsh-learning-space#path:packages/dsh-learning"
@@ -60,12 +70,6 @@ dsh plugin --profile web add "github:<OWNER>/dsh-learning-space#path:packages/ds
 allowBuilds:
   dsh-learning: true
   dsh-client-ui-learning: true
-```
-
-学习模式不随这条命令安装，需要手动拷贝（一条命令）：
-
-```powershell
-Copy-Item "$env:USERPROFILE\dsh-learning-space\preset\*" "$HOME\.dsh\.agent-presets\learning" -Recurse -Force
 ```
 
 ### 验证装没装上
@@ -93,7 +97,7 @@ dsh --profile web --dump-config
 ## 升级 / 卸载
 
 ```powershell
-# 升级：更新代码后重跑安装脚本
+# 升级：直接重跑安装命令即可（方式一用户就再下载一次脚本，方式二用户如下）
 git -C "$env:USERPROFILE\dsh-learning-space" pull --ff-only
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\dsh-learning-space\install.ps1"
 

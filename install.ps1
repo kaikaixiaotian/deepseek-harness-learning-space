@@ -1,15 +1,18 @@
 # install.ps1 — one-shot installer for dsh-learning-space (Windows PowerShell)
 #
-# Usage (from a clone of this repository):
-#   powershell -ExecutionPolicy Bypass -File install.ps1
+# Two ways to run it:
 #
-# Or let it clone for you:
-#   powershell -ExecutionPolicy Bypass -File install.ps1 -RepoUrl https://github.com/<OWNER>/dsh-learning-space
+#   A) One command (recommended for users) — downloads this script from the
+#      repository and runs it; the script clones the repo itself:
+#        powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest 'https://github.com/<OWNER>/dsh-learning-space/raw/main/install.ps1' -OutFile install.ps1; .\install.ps1"
+#
+#   B) From a clone — run it inside the repository checkout (dev/upgrade):
+#        powershell -ExecutionPolicy Bypass -File install.ps1
 #
 # What it does (all steps idempotent):
 #   1) preflight: git / pnpm / dsh CLI on PATH
 #   2) locate the repo: the script's own checkout when run from a clone,
-#      otherwise clone -RepoUrl (default location $USERPROFILE\dsh-learning-space)
+#      otherwise clone $RepoUrl (default $USERPROFILE\dsh-learning-space)
 #   3) preset  -> $DSH_HOME\.agent-presets\learning   (official user-preset root)
 #   4) build the two npm subpackages (pnpm install + pnpm bundle, self-contained)
 #   5) register them through the OFFICIAL mechanism:
@@ -21,11 +24,15 @@
 
 param(
   [string]$Profile = 'web',
-  [string]$RepoUrl = '',
+  [string]$RepoUrl = 'https://github.com/<OWNER>/dsh-learning-space',
   [string]$CloneDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
+
+# PowerShell 5.1 defaults to the ANSI code page; UTF-8 keeps the Chinese
+# status lines intact no matter which console the script runs in.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 function Fail($message) {
   Write-Host "[install] ERROR: $message" -ForegroundColor Red
@@ -50,8 +57,10 @@ $profileDir = Join-Path $dshHome "profiles\$Profile"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not (Test-Path (Join-Path $root '.git'))) {
-  if ($RepoUrl -eq '') {
-    Fail "run this script from inside a git clone, or pass -RepoUrl https://github.com/<OWNER>/dsh-learning-space"
+  # Running from a downloaded copy of this script (one-command install):
+  # fetch the repository into the default location and install from there.
+  if ($RepoUrl -match '<OWNER>') {
+    Fail 'install.ps1 里的默认仓库地址还是占位符：请把脚本中的 <OWNER> 替换为你的 GitHub 用户名（或加 -RepoUrl 指定真实地址）后重试'
   }
   if ($CloneDir -eq '') { $CloneDir = Join-Path $env:USERPROFILE 'dsh-learning-space' }
   if (Test-Path (Join-Path $CloneDir '.git')) {
