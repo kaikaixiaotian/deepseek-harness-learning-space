@@ -4,3 +4,4 @@ lib/
 .zcode/
 *.tgz
 *.tmp-*
+.idea/
