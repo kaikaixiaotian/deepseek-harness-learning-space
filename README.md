@@ -1,24 +1,39 @@
-# dsh-learning-space —— DSH 学习空间（单仓库 · 三个组成）
+# dsh-learning-space —— DSH 学习空间
 
-把「学习某个技能/领域」变成**可衡量、可追踪、会自适应**的闭环学习体验的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）插件集，一个 GitHub 仓库、三个组成：
+把「学会一个技能」变成一条能走完的路：测评你现在在哪 → 生成教材和测验 → 过关了学下一章，没过就换个讲法重讲 → 每章还能记笔记。整个过程都在 DeepSeek Harness（DSH）里完成，不碰其他任何配置。
 
-| 组成 | 层 | 是什么 | 状态 |
-|---|---|---|---|
-| [preset/](preset/) | 宿主/模式层 | 「学习模式」agent preset：导师 persona + 学习闭环工具 + 内嵌 learning-loop 技能（目录/文件名按语言自适应，初始化创建 notes/ 笔记目录） | ✅ 可用 |
-| [packages/dsh-learning/](packages/dsh-learning/) | 宿主服务 | 学习空间宿主服务：工作区发现/目录树/文件读取/笔记读写，以 Typert Remote `learning` namespace 暴露给浏览器 | ✅ 可用 |
-| [packages/dsh-client-ui-learning/](packages/dsh-client-ui-learning/) | 客户端/UI 层 | 专属打开卡片（打开章节/打开测验）+ 全屏三栏学习空间（目录树/章节测验查看/富文本笔记自动保存） | ✅ 可用 |
+<!-- 截图区（待补充）：建议 3 张 —— 1) 学习模式会话 + 回复中的「打开章节」卡片  2) 学习空间全貌（左目录 / 中章节 / 右笔记三栏）  3) 章节正文 + 笔记编辑 -->
 
-两个 npm 包均为官方 **bundle 包**（`dsh.bundle` manifest + 包内 `cordis.patch.yml`），通过官方 `dsh plugin` 机制安装/卸载；preset 遵循官方用户预设目录约定（`$DSH_HOME/.agent-presets/`）。
+<!-- 图 1：学习模式会话 -->
 
-## 前置要求
+<!-- 图 2：学习空间三栏 -->
 
-- [Node.js](https://nodejs.org/) ≥ 20 与 pnpm（`npm i -g pnpm`）
-- dsh CLI：`npm i -g @deepseek-ai/dsh`（或 `npx @deepseek-ai/dsh`）
-- git（方式 A/B 需要）
+<!-- 图 3：章节查看与笔记 -->
+
+## 这是什么
+
+它由三部分组成，装一次全都有：
+
+- **学习模式**：DSH 会话的一种模式。选上它，助手就变成你的专属导师，会一步步带你学完一个主题。
+- **学习空间**：一个全屏界面。左边是目录树，中间看章节/测验（交互演示、测验都能直接玩），右边写笔记（自动保存）。
+- **打开卡片**：导师每生成一章内容，回复里就会出现「打开章节」「打开测验」的卡片，点一下就进学习空间。
+
+它的学习流程是闭环的：
+
+- **先测评**：让你做一份基线测评，摸清现在的水平；
+- **再生成**：总目录 + 章节教材（HTML，带交互演示）+ 六种题型的测验；
+- **硬门槛**：合并正确率 ≥80% 才算过关，没过就**换个讲法重讲**（最多重讲 3 版），不是让你重看；
+- **记笔记**：每章一个笔记，自动保存到学习工作区，随时翻；
+- **断点续学**：学到一半关了？下次回来接着学，不会从头再来；
+- **语言自适应**：你说中文，就生成 `章节/测验/知识库` 这样的中文目录；说英文，就是 `chapters/quizzes/wiki`。
 
 ## 安装
 
-### 方式 A（推荐）：克隆 + install.ps1 一键安装
+需要先装好三样：**Node.js ≥ 20**、**pnpm**、**git**（dsh CLI 会随仓库脚本自动用到，未安装时按提示装一下即可）。
+
+> 仓库地址里的 `<OWNER>` 请替换成你自己的 GitHub 用户名（仓库建好后）。
+
+### 方式一：克隆 + 一键安装（推荐）
 
 ```powershell
 git clone https://github.com/<OWNER>/dsh-learning-space "$env:USERPROFILE\dsh-learning-space"
@@ -26,16 +41,20 @@ cd "$env:USERPROFILE\dsh-learning-space"
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-脚本幂等，可重复运行（升级时重跑即可）。它会：拷贝 preset → 构建两个 npm 包（`pnpm install` + `pnpm bundle`）→ `dsh plugin --profile web add` 官方登记 → 补齐 `allowBuilds` → 清理旧版 junction 安装残留。装好后**重启 dsh web**（插件集合变化需重启生效），新开会话即可在模式选择器看到「学习模式」。
+脚本会完成全部三步：安装学习模式、构建两个插件包、注册到你的 DSH 配置里。**重复运行不会重复安装**，以后升级也直接重跑它。
 
-### 方式 B：免克隆，直接从 GitHub 安装（dsh plugin add github:）
+装完**重启 dsh web**，新开会话就能在模式选择器看到「学习模式」。
+
+### 方式二：免克隆，直接装
+
+不想克隆整个仓库？两条命令直接装插件：
 
 ```powershell
 dsh plugin --profile web add "github:<OWNER>/dsh-learning-space#path:packages/dsh-learning"
 dsh plugin --profile web add "github:<OWNER>/dsh-learning-space#path:packages/dsh-client-ui-learning"
 ```
 
-GitHub 安装拉取的是**源码**：pnpm 会在安装时运行各包自包含的 `prepare` 脚本完成构建。pnpm ≥ 10 需要先授权构建脚本——把下面的键写入 `$env:DSH_HOME\profiles\web\pnpm-workspace.yaml`（或 `$HOME\.dsh\...`，未设 `DSH_HOME` 时）后重试 add：
+第一次装的时候 pnpm 会要求你确认允许这两个包在安装时执行构建脚本——把下面两行加到 `%USERPROFILE%\.dsh\profiles\web\pnpm-workspace.yaml`（没有就新建）后重试即可：
 
 ```yaml
 allowBuilds:
@@ -43,66 +62,57 @@ allowBuilds:
   dsh-client-ui-learning: true
 ```
 
-> `#path:` 是 pnpm 的仓库子目录安装语法；若你的 dsh CLI 版本转发该语法有问题，改用方式 A。授权意味着允许该包代码在安装时于你的机器上执行——请只对可信仓库授权，可锁定 commit：`#<sha>`。
->
-> preset 不随 `dsh plugin add` 安装，仍需手动拷贝（见 [preset/README.md](preset/README.md)）。
-
-### 方式 C：tarball 安装（免构建授权）
-
-在克隆里（或 CI）打好包再交给用户直装，产物已预构建：
+学习模式不随这条命令安装，需要手动拷贝（一条命令）：
 
 ```powershell
-cd packages\dsh-learning; pnpm pack
-cd ..\dsh-client-ui-learning; pnpm pack
-dsh plugin --profile web add ..\dsh-learning\dsh-learning-0.1.0.tgz
-dsh plugin --profile web add .\dsh-client-ui-learning-0.1.0.tgz
+Copy-Item "$env:USERPROFILE\dsh-learning-space\preset\*" "$HOME\.dsh\.agent-presets\learning" -Recurse -Force
 ```
 
-### 验证安装
+### 验证装没装上
 
 ```powershell
-dsh --profile web --dump-config   # 应能看到 learning / ui-learning 两行进入组合
+dsh --profile web --dump-config
 ```
+
+能看到 `learning` 和 `ui-learning` 两行就说明装好了。
 
 ## 使用
 
-选「学习模式」后：`/learning-loop`、`/learning-loop <主题>`、`/learning-loop status`、`/learning-loop upgrade` 或直接说「我想学 X」。模型生成章节/测验后，回复尾部出现**「打开章节」「打开测验」卡片**（无对应产物不显示；卡片数据依赖 web-app bundle 自带的 deliverables 轮次数据，缺失时卡片静默不显示），点击在 DSH 内打开全屏学习空间：
+1. 新开一个会话，模式选择**学习模式**；
+2. 直接说「我想学 React」「带我搞懂 X」，或者用命令：
+   - `/learning-loop` —— 有学到一半的课程就续学，没有就问你学什么；
+   - `/learning-loop React` —— 跳过提问直接开始；
+   - `/learning-loop status` —— 看看所有课程的进度；
+3. 导师生成章节后，回复里点**「打开章节」**卡片，进入学习空间：
+   - **左栏**：目录树，点开章节/测验；
+   - **中栏**：正文 + 交互演示，测验可以在这里直接做；
+   - **右栏**：笔记，边看边记，自动保存。
 
-- 左栏：基线/章节/测验目录树，点击展开；
-- 中栏：章节/测验 HTML 内嵌查看（交互演示、测验表单都可操作）；
-- 右栏：每章一个富文本笔记，自动保存到工作区 `notes/`（中文 `笔记/`）。
-
-详细说明见 [preset/README.md](preset/README.md)。
+学完一章并过关后，导师会自动写一份「知识库」条目，记录你哪里稳、哪里虚，用它来调整下一章的讲法。
 
 ## 升级 / 卸载
 
 ```powershell
-# 升级：更新克隆后重跑 install.ps1（或：git pull 后重新 dsh plugin add 两个包）
+# 升级：更新代码后重跑安装脚本
 git -C "$env:USERPROFILE\dsh-learning-space" pull --ff-only
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\dsh-learning-space\install.ps1"
 
-# 卸载：官方机制同步移除依赖与组合层
+# 卸载：两条命令 + 删掉学习模式目录
 dsh plugin --profile web remove dsh-learning
 dsh plugin --profile web remove dsh-client-ui-learning
-Remove-Item -Recurse -Force "$HOME\.dsh\.agent-presets\learning"   # preset
+Remove-Item -Recurse -Force "$HOME\.dsh\.agent-presets\learning"
 ```
 
 ## 已知限制
 
-- 测验提交仍走「浏览器下载 answers.json → 手动放回工作区」旧流程；srcDoc iframe 场景下 restore-on-load 的相对路径恢复不生效（路线图任务 3 待做，详见 [packages/dsh-client-ui-learning/README.md](packages/dsh-client-ui-learning/README.md)）。
-- 笔记为「最后写入者胜出」，无多端合并；富文本基于 `document.execCommand`（已弃用但各浏览器仍可用）。
-- 两个包按 dsh `0.1.0-rc.7` / cordis `4.0.1` 的 peer 版本开发；dsh 后续版本升级 peer 范围后需同步验证。
+- **测验提交目前是半自动的**：做完测验会下载一个答案文件，把它放回工作区的测验目录，导师就能批改。一键回传正在开发中（见下方路线图）。
+- 笔记是「最后保存的赢」：别开两个页面同时写同一章笔记。
+- 笔记编辑器用的是浏览器自带能力（已标记弃用但所有浏览器都支持），后续会换更强的编辑器。
 
 ## 路线图
 
-- [x] preset「学习模式」+ learning-loop 技能迁移（DSH 适配 + 名称语言自适应 + 笔记目录）
-- [x] 宿主学习空间服务（dsh-learning，Typert Remote）
-- [x] 学习空间 UI（专属卡片 + 全屏三栏 + 笔记自动保存）
-- [x] 一键安装脚本 install.ps1
-- [x] **规范化重构（本次）**：官方 bundle 机制（`dsh.bundle` + `dsh plugin add/remove`）、修复笔记首次保存必败的 P0 bug（realpath ENOENT）、构建管线修复（标准装饰器经 tsc 降级，产物可被 Node 加载）、依赖声明/manifest 合规、preset 字段合规、UI 本地化收尾、GitHub 分发三通道文档
-- [ ] **任务 3：重构原章节/测验模板以适配学习空间**（构建完学习空间后进行）：
-  - 测验表单提交改为学习空间内回传（postMessage / 直写工作区），不再依赖「下载 answers.json → 手动放回」；
-  - 测验恢复（restore-on-load）适配 srcDoc iframe 场景；
-  - 章节模板增加学习空间导航与笔记锚点（正文位置 ↔ 笔记联动）；
-  - 模板与 meta.json/学习空间状态联动（打开进度、阶段徽标）。
-- [ ] TipTap 等更强富文本、笔记导出、目录搜索、学习进度面板。
+- [x] 学习模式 + 学习闭环（测评 → 教材 → 测验 → 过关/重讲 → 知识库）
+- [x] 学习空间三栏界面 + 打开卡片 + 笔记自动保存
+- [x] 一键安装脚本 + 官方安装机制适配
+- [ ] 测验一键回传：做完直接交卷，不再手动放答案文件（含章节内导航与笔记联动）
+- [ ] 更强富文本编辑器、笔记导出、目录搜索、学习进度面板
