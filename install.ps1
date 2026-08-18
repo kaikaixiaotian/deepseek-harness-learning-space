@@ -84,7 +84,7 @@ foreach ($pkg in @('dsh-learning', 'dsh-client-ui-learning')) {
   try {
     pnpm install --silent
     if ($LASTEXITCODE -ne 0) { Fail "pnpm install failed for $pkg" }
-    pnpm bundle --silent
+    pnpm --silent bundle
     if ($LASTEXITCODE -ne 0) { Fail "pnpm bundle failed for $pkg" }
   } finally {
     Pop-Location
@@ -98,8 +98,13 @@ if (-not (Test-Path $profileDir)) { Fail "dsh profile not found: $profileDir (st
 
 foreach ($pkg in @('dsh-learning', 'dsh-client-ui-learning')) {
   $dir = (Resolve-Path (Join-Path $root "packages\$pkg")).Path
-  dsh plugin --profile $Profile add $dir
-  if ($LASTEXITCODE -ne 0) { Fail "dsh plugin add failed for $pkg" }
+  dsh plugin --profile $Profile add $dir 2>&1 | Tee-Object -Variable addOut | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    if ($addOut -match 'ERR_PNPM_UNEXPECTED_STORE') {
+      Fail "pnpm on PATH (v$(pnpm --version)) uses a different store than this profile was installed with. Fix by: (a) matching pnpm versions, e.g. 'npm i -g pnpm@11', or (b) running 'pnpm config set store-dir <matching-store> --global', then re-run"
+    }
+    Fail "dsh plugin add failed for $pkg"
+  }
   Step "$pkg registered in profile '$Profile' (dsh.profile.bundles)"
 }
 

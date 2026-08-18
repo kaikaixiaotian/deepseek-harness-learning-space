@@ -1,0 +1,5 @@
+# pnpm 11 security policy: the dsh rc packages in the lockfile are published
+# too recently for the default minimumReleaseAge cutoff. The dependencies are
+# first-party dsh packages; disable the age gate instead of excluding them
+# one by one (mirrors the dsh profile's own pnpm-workspace.yaml approach).
+minimumReleaseAge: 0
