@@ -41,6 +41,13 @@ powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest 'https://github.c
 
 这一条命令会：把仓库下载到 `%USERPROFILE%\dsh-learning-space` → 安装学习模式 → 构建并注册两个插件包 → 完成配置。**重复运行不会重复安装**，以后升级也直接重跑它。
 
+想装特定版本？给脚本加参数：
+
+```powershell
+.\install.ps1 -Version 'v0.1.0'   # 装某个发布版本
+.\install.ps1 -Version 'main'     # 跟开发分支
+```
+
 装完**重启 dsh web**，新开会话就能在模式选择器看到「学习模式」。
 
 > 当前目录会留下一个 `install.ps1`（就是下载的脚本），装完删掉即可。
@@ -53,7 +60,7 @@ cd "$env:USERPROFILE\dsh-learning-space"
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-效果和方式一完全一样，只是仓库已经在本地，方便你改代码或查看内容。
+脚本会认出自己正在仓库里，直接使用本地代码（不会重复下载）。也可以显式指定：`.\install.ps1 -Source "$env:USERPROFILE\dsh-learning-space"`。
 
 ### 方式三：免克隆，只装插件
 
