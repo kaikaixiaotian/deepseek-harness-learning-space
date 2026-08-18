@@ -1,0 +1,6 @@
+# dsh-client-ui-learning bundle layer: registers the client-side learning UI
+# (turn-tail open cards + the full-screen learning space overlay).
+# Installed via `dsh plugin --profile <name> add` (host-plane row; the browser
+# half is discovered through the package's `dsh.client` declaration).
+- id: ui-learning
+  name: 'dsh-client-ui-learning'

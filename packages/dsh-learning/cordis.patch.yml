@@ -1,0 +1,4 @@
+# dsh-learning bundle layer: registers the host-side learning Remote service
+# (namespace 'learning'). Installed via `dsh plugin --profile <name> add`.
+- id: learning
+  name: 'dsh-learning'

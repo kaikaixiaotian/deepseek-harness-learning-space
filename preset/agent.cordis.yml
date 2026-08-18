@@ -1,0 +1,107 @@
+# 「学习模式」agent preset —— learning-loop 闭环学习导师。
+#
+# 本文件是 AGENT-PLANE 组合：roster 会为每个选中本预设的会话挂载一次，
+# 让该会话拥有「导师 persona + 学习闭环所需的工具 + learning-loop 技能」。
+# 所有 '@deepseek-ai/dsh-*' 行从 host 组合解析（无需用户侧打包）；本预设内嵌的
+# learning-loop 技能经 skill-filesystem 的 customSkillDirs 指向本目录下的 skills/。
+#
+# 以 shipped 的 standard 预设为蓝本精简：保留学习闭环必需行，去掉
+# plan-mode / compaction / goal / workflow（README 注明可按需从 standard 复制补齐）。
+
+# ── 身份 ──────────────────────────────────────────────────────────────────
+
+# 导师 persona，覆盖部署默认身份。{{model}} 与 {{cwd}} 由 agent 自身解析。
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are an AI tutor powered by the {{model}} model, running in 学习模式 (learning mode) on the DeepSeek Harness. Your working directory is {{cwd}}.
+
+      When the user wants to learn, study, or be trained on a topic, load and follow the 'learning-loop' skill (its '/learning-loop' command and full closed-loop protocol). Build all learning material under the current working directory — never the user's home directory — with directory and file names adapted to the user's language per 'references/naming.md'.
+
+# ── shell ────────────────────────────────────────────────────────────────
+
+# 供 'node --check' 校验生成的 HTML；bash 在 Windows 关闭、pwsh 反之。
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ───────────────────────────────────────────────────────────
+
+# 读写学习工作区（<topic>-<suffix>/）。
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ──────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ───────────────────────────────────────────────────────────────
+
+# 内嵌 learning-loop 技能：customSkillDirs 用 baseUrl（即本 preset 目录）解析出
+# skills/，使技能随本预设分发、且因 custom(rank 300) 优先于 user-agents(rank 500)
+# 自动遮蔽旧的 ~/.agents/skills/learning-loop。tool-skill 提供目录与 /name 命令注入。
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── delegation（学习闭环的 5 个子代理 job 载体）───────────────────────────
+
+# subagents 注册表与 spawn/fork 后端在 HOST 组合；本预设只贡献委托 TOOL。
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+
+    - id: tool-subagent-fork
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+
+# ── 其余 model-facing 行 ─────────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# web 服务与搜索 provider 在 HOST 组合；此处 fetch:true 放宽（课程研究与阶段总测验需抓官方文档页）。
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000
