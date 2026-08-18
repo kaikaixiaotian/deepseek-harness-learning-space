@@ -109,6 +109,8 @@ git -C "$env:USERPROFILE\dsh-learning-space" pull --ff-only
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\dsh-learning-space\install.ps1"
 ```
 
+升级脚本会用干净的方式重装学习模式（连同技能文件），并强制换代。**升级后重启 dsh web、新开会话**，新的技能内容才会可靠加载。
+
 ### 卸载
 
 ```powershell

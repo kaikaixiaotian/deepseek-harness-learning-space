@@ -157,9 +157,17 @@ if (-not (Test-Path (Join-Path $src 'packages\dsh-learning\package.json')) -or -
 Step 'installing the 学习模式 preset'
 NextStep
 $presetDest = Join-Path $DshHome '.agent-presets\learning'
+# Clean copy: Copy-Item never deletes files that disappeared from the source
+# (renamed/removed skill files would linger and keep the old content alive),
+# and the preset generation stamp is the agent.cordis.yml mtime — an unchanged
+# stamp means new sessions may keep using the old mounted tree.
+if (Test-Path $presetDest) { Remove-Item $presetDest -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $presetDest | Out-Null
 Copy-Item (Join-Path $src 'preset\*') $presetDest -Recurse -Force
-Info "preset -> $presetDest"
+# Force a new generation so new sessions mount the fresh tree (including
+# skill content changes, which do not bump the stamp by themselves).
+(Get-Item (Join-Path $presetDest 'agent.cordis.yml')).LastWriteTime = Get-Date
+Info "preset -> $presetDest (fresh copy, generation bumped)"
 
 # ---------- 3. build ----------
 
