@@ -125,7 +125,7 @@ if ($isRemote) {
                 Info "最新版本: $ref"
             }
         } catch {
-            Warn '查询最新版本失败，回退到 main 分支'
+            Warn 'latest release lookup failed, falling back to the main branch'
             $ref = 'main'
             $isTag = $false
         }
