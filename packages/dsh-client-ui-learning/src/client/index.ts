@@ -29,6 +29,12 @@ export function apply(ctx: ClientContext): void {
     name: 'conversation.chat.turnTail',
     select: selectLearningCards,
     locale: NS,
+    // The turnTail slot is a single-choice CHAIN: lower priority tries first,
+    // and the official deliverables entry (default 0) claims every turn that
+    // produced ANY file. Register below it so learning artifacts render the
+    // open-in-space card; other produced files fall through to the generic
+    // deliverables card.
+    priority: -10,
   }, LearningCards))
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
