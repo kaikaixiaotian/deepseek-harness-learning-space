@@ -21,15 +21,14 @@
 | 逻辑名（en） | zh | 用途 |
 |---|---|---|
 | `-learning` | `-学习` | 工作区目录后缀 |
-| `00-baseline` | `00-基线测评` | 基线测评目录 |
 | `plan` | `计划` | 总目录/计划目录 |
 | `sources` | `资料` | 章节资料卡目录（plan/ 下） |
 | `chapters` | `章节` | 章节教材目录 |
 | `viz` | `演示` | 交互演示目录（chapters/ 下） |
-| `quizzes` | `测验` | 测验目录 |
+| `quizzes` | `测验` | 测验目录（基线测评也存这里 — 统一存储，无单独基线目录） |
 | `wiki` | `知识库` | 学习记录目录 |
-| `baseline.html` | `基线测评.html` | 基线测评（表单） |
-| `baseline-answers.json` | `基线测评-答案.json` | 基线测评答案 |
+| `baseline.html` | `基线测评.html` | 基线测评（表单，位于测验目录） |
+| `baseline-answers.json` | `基线测评-答案.json` | 基线测评答案（与表单同目录） |
 | `master-plan.html` | `总目录.html` | 总目录（read-mode） |
 | `master-plan-grading.json` | `总目录-批改.json` | 总目录适配记录 |
 | `stageN-chXX-<slug>.html` | `阶段N-章XX-<slug>.html` | 章节教材（read-mode） |

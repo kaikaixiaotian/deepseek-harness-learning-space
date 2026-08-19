@@ -25,6 +25,7 @@ import { readdir, readFile, rename, writeFile, mkdir, realpath } from 'node:fs/p
 import { basename, join, resolve, relative, sep, isAbsolute } from 'node:path'
 import {
   META_FILE,
+  LEGACY_BASELINE_DIRS,
   answersFileOf,
   deriveLocale,
   isLearningWorkspaceDir,
@@ -177,7 +178,9 @@ export default class LearningService extends TypertRemoteService {
    * Save a quiz/baseline answers payload next to its html file — the
    * in-space submit path of the learning-loop quiz form. The answers file
    * name is derived host-side from the quiz stem plus the localized marker,
-   * and it may only land in the quizzes or baseline dir.
+   * and it may only land in the quizzes dir (the baseline html lives there
+   * too — unified storage); legacy pre-unification baseline dirs stay
+   * writable so old workspaces keep submitting into their existing files.
    */
   @Remote
   async saveQuizAnswers(sessionId: string, root: string, quizPath: string, json: string): Promise<{ saved: true; answersPath: string }> {
@@ -188,7 +191,7 @@ export default class LearningService extends TypertRemoteService {
     const segments = normalized.split('/')
     const stem = stemOf(normalized)
     const dirName = segments.length > 1 ? segments[segments.length - 2] ?? '' : ''
-    const allowedDirs = [dirs.quizzes, dirs.baseline, 'quizzes', '测验', '00-baseline', '00-基线测评']
+    const allowedDirs: readonly string[] = [dirs.quizzes, 'quizzes', '测验', ...LEGACY_BASELINE_DIRS]
     if (!allowedDirs.includes(dirName) || !isSafeQuizStem(stem)) {
       throw new Error('learning.saveQuizAnswers: the path is not a quiz or baseline file in this workspace')
     }

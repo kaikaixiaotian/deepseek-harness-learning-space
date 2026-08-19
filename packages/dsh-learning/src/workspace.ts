@@ -8,9 +8,10 @@
  * topic slugs and version suffixes stay ASCII.
  */
 
-/** Workspace subdirectory names per locale (en canonical first). */
+/** Workspace subdirectory names per locale (en canonical first).
+ * No baseline dir: the baseline assessment lives in the quizzes dir (unified
+ * storage); LEGACY_BASELINE_DIRS only recognizes pre-unification workspaces. */
 export const DIR_TOKENS = {
-  baseline: ['00-baseline', '00-基线测评'],
   plan: ['plan', '计划'],
   chapters: ['chapters', '章节'],
   quizzes: ['quizzes', '测验'],
@@ -23,11 +24,13 @@ export type WorkspaceDirKey = keyof typeof DIR_TOKENS
 /** Workspace directory-name suffixes per naming.md. */
 export const WORKSPACE_SUFFIXES = ['-learning', '-学习'] as const
 
+/** Pre-unification baseline dir names — read/answer-write compatibility only. */
+export const LEGACY_BASELINE_DIRS = ['00-baseline', '00-基线测评'] as const
+
 /** The state-machine anchor file; its name never localizes. */
 export const META_FILE = 'meta.json'
 
 export interface WorkspaceDirs {
-  readonly baseline: string
   readonly plan: string
   readonly chapters: string
   readonly quizzes: string
@@ -40,7 +43,6 @@ export function workspaceDirs(locale: string): WorkspaceDirs {
   const zh = locale.trim().toLowerCase() === 'zh'
   const pick = (key: WorkspaceDirKey): string => (zh ? DIR_TOKENS[key][1] : DIR_TOKENS[key][0])
   return {
-    baseline: pick('baseline'),
     plan: pick('plan'),
     chapters: pick('chapters'),
     quizzes: pick('quizzes'),
@@ -109,6 +111,9 @@ export function baseName(path: string): string {
   return parts[parts.length - 1] ?? path
 }
 
+/** Baseline file-name markers (the baseline html lives in the quizzes dir). */
+const BASELINE_MARKERS = ['baseline', '基线测评']
+
 /** What kind of learning artifact a produced path is (path-based). */
 export type ArtifactKind = 'chapter' | 'quiz' | 'viz' | 'baseline' | 'plan' | 'other'
 
@@ -122,17 +127,23 @@ export function classifyArtifact(path: string, dirs: WorkspaceDirs): ArtifactKin
   const segments = norm.split('/')
   const name = stemOf(norm)
   const inDir = (key: WorkspaceDirKey): boolean => segments.includes(dirs[key])
+  const inLegacyBaseline = segments.some(segment => (LEGACY_BASELINE_DIRS as readonly string[]).includes(segment))
+  const isBaselineName = BASELINE_MARKERS.some(marker => name.toLowerCase().includes(marker))
   if (inDir('chapters') && segments.includes('viz')) return 'viz'
-  if (inDir('quizzes')) {
+  if (inDir('quizzes') || inLegacyBaseline) {
+    if (isBaselineName) {
+      // The baseline html and its answers/grading files all carry the marker.
+      return ANSWERS_MARKERS.some(marker => name.includes(marker)) ? 'other' : 'baseline'
+    }
     if (ANSWERS_MARKERS.some(marker => name.includes(marker))) return 'other'
     if (QUIZ_MARKERS.some(marker => name.includes(marker))) return 'quiz'
     if (name.includes('-total')) return 'quiz'
+    return 'quiz'
   }
   if (inDir('chapters')) {
     if (NOTE_MARKERS.some(marker => name.includes(marker))) return 'other'
     return 'chapter'
   }
-  if (inDir('baseline')) return 'baseline'
   if (inDir('plan')) return 'plan'
   return 'other'
 }

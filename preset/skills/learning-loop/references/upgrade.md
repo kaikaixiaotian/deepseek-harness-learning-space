@@ -20,7 +20,8 @@ The preset directory is **install-managed** (the repository's `install.ps1` copi
    - `"schema_version": "<新版本>"` — marks this workspace as upgraded (e.g. `"1.4.1"`).
    - `"upgraded_at": "<ISO timestamp>"` — when the upgrade happened.
 3. Append a `history` event: `{ "ts": "...", "event": "upgraded", "detail": "schema_version=<新版本>; existing files untouched; subsequent generation follows current spec" }`.
-4. Print a one-line summary per workspace: "<workspace> upgraded. Existing files unchanged. New chapters/quizzes will use the current format (quizKey + restoreData + restore JS + feedback slots)."
+4. **Baseline-dir unification (safe file moves only):** if the workspace still has a legacy `00-baseline/` (zh: `00-基线测评/`) directory, move its files (`baseline.html` + any `-answers`/`-批改` files) into the `quizzes/` (zh: `测验/`) directory — skip any file whose target name already exists — then remove the baseline dir if it is now empty. This is a plain file move (file contents are never edited), so it does not violate the no-patching principle below. Note it in the `history` event detail.
+5. Print a one-line summary per workspace: "<workspace> upgraded. Existing files unchanged. New chapters/quizzes will use the current format (quizKey + restoreData + restore JS + feedback slots)."
 
 That's the whole of step 2. No file scanning, no patching, no HTML editing.
 

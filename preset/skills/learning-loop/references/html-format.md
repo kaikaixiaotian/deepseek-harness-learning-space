@@ -207,6 +207,10 @@ This is the exact script pattern (identical to the quiz-form skeleton in `refere
           if (notice) { notice.textContent = '✓ 已交卷：答案已保存到学习空间工作区，回到聊天继续即可。'; notice.style.display = 'block'; }
           return;
         }
+        if (notice) {
+          notice.textContent = '⚠ 保存失败（' + (reply && reply.error ? reply.error : '桥接超时') + '）。答案文件已下载，请放到测验文件旁边，然后在聊天里告诉 AI「做好了」。';
+          notice.style.display = 'block';
+        }
         downloadFallback(json, slug);
       });
       return;
@@ -259,19 +263,27 @@ This is the exact script pattern (identical to the quiz-form skeleton in `refere
     var slug = document.body.getAttribute('data-quiz');
     if (inSpace) {
       // Priority 1 in-space: the host bridge reads the sibling answers file
-      // (srcDoc has no fetchable base URL, fetch('./...') cannot work there)
+      // (srcDoc has no fetchable base URL, fetch('./...') cannot work there).
+      // The host derives the answers filename from the quiz file's stem plus
+      // the WORKSPACE locale suffix ('-answers.json' en / '-答案.json' zh) —
+      // the page cannot know the locale, so try both candidates in order.
+      function applyReply(content) {
+        try {
+          var data = JSON.parse(content);
+          if (data && data.answers) {
+            applyAnswers(data.answers);
+            try { localStorage.setItem('ll-answers-' + slug, content); } catch (e) {}
+            return true;
+          }
+        } catch (e) {}
+        return false;
+      }
       bridgeSend({ type: 'll-read', id: ++msgSeq, path: './' + slug + '-answers.json' }).then(function (reply) {
-        if (reply && reply.ok && reply.content) {
-          try {
-            var data = JSON.parse(reply.content);
-            if (data && data.answers) {
-              applyAnswers(data.answers);
-              try { localStorage.setItem('ll-answers-' + slug, reply.content); } catch (e) {}
-              return;
-            }
-          } catch (e) {}
-        }
-        restoreFromCache(slug);
+        if (reply && reply.ok && reply.content && applyReply(reply.content)) return;
+        bridgeSend({ type: 'll-read', id: ++msgSeq, path: './' + slug + '-答案.json' }).then(function (reply2) {
+          if (reply2 && reply2.ok && reply2.content && applyReply(reply2.content)) return;
+          restoreFromCache(slug);
+        });
       });
       return;
     }

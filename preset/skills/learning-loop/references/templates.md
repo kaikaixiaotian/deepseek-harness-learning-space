@@ -17,7 +17,7 @@ The markdown templates below (baseline-assessment.md, chapter doc, chapter-quiz,
 
 ## baseline-assessment.md
 
-Located at `00-baseline/baseline.html` (zh: `00-基线测评/基线测评.html`) — the degradation fallback of the quiz-form baseline; the user fills this in and submits per the answers protocol.
+Located at `quizzes/baseline.html` (zh: `测验/基线测评.html` — unified storage in the quizzes dir; no separate baseline dir) — the degradation fallback of the quiz-form baseline; the user fills this in and submits per the answers protocol.
 
 ```markdown
 # 基础测评 — <topic>
@@ -1073,6 +1073,10 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
           if (notice) { notice.textContent = '✓ 已交卷：答案已保存到学习空间工作区，回到聊天继续即可。'; notice.style.display = 'block'; }
           return;
         }
+        if (notice) {
+          notice.textContent = '⚠ 保存失败（' + (reply && reply.error ? reply.error : '桥接超时') + '）。答案文件已下载，请放到测验文件旁边，然后在聊天里告诉 AI「做好了」。';
+          notice.style.display = 'block';
+        }
         downloadFallback(json, slug);
       });
       return;
@@ -1113,19 +1117,26 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
     }
     var slug = document.body.getAttribute('data-quiz');
     if (inSpace) {
-      // Priority 1 in-space: ask the host bridge to read the sibling answers file
+      // The host derives the answers filename from the quiz file's stem plus
+      // the WORKSPACE locale suffix ('-answers.json' en / '-答案.json' zh).
+      // The page cannot know the locale, so try both candidates in order.
+      function applyReply(content) {
+        try {
+          var data = JSON.parse(content);
+          if (data && data.answers) {
+            applyAnswers(data.answers);
+            try { localStorage.setItem('ll-answers-' + slug, content); } catch (e) {}
+            return true;
+          }
+        } catch (e) {}
+        return false;
+      }
       bridgeSend({ type: 'll-read', id: ++msgSeq, path: './' + slug + '-answers.json' }).then(function (reply) {
-        if (reply && reply.ok && reply.content) {
-          try {
-            var data = JSON.parse(reply.content);
-            if (data && data.answers) {
-              applyAnswers(data.answers);
-              try { localStorage.setItem('ll-answers-' + slug, reply.content); } catch (e) {}
-              return;
-            }
-          } catch (e) {}
-        }
-        restoreFromCache(slug);
+        if (reply && reply.ok && reply.content && applyReply(reply.content)) return;
+        bridgeSend({ type: 'll-read', id: ++msgSeq, path: './' + slug + '-答案.json' }).then(function (reply2) {
+          if (reply2 && reply2.ok && reply2.content && applyReply(reply2.content)) return;
+          restoreFromCache(slug);
+        });
       });
       return;
     }
@@ -1148,7 +1159,7 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
 ```
 
 **Quiz-form non-negotiables:**
-- `<body data-quiz="<slug>">` carries the slug used in the answers filename.
+- `<body data-quiz="<slug>">` carries the slug used in the answers filename. **The slug MUST equal the html file's own stem** (e.g. `stage1-ch01-quiz.html` → `stage1-ch01-quiz`): the host writes `<stem>-answers.json` next to the file, and the page's restore JS reads `<slug>-answers.json` — a mismatch silently breaks restore.
 - Every question is a `<fieldset class="question" data-qid="qN" data-kp="..." data-assert="..." data-type="..." data-points="...">` — the AI reads these data-* attrs when grading (this replaces the inline `[考点: KP-x]` md tags). **`data-assert` carries the assertion IDs** (comma-separated when multiple, format `KP-2-A3`; prose displays it as `KP-2·A3`) — every listed assertion MUST exist in the chapter doc's 断言清单 (`kp-asserts`). A question whose assertion isn't listed there is 超纲 — rewrite it at generation time, don't wait for grading.
 - Radio/checkbox `name` MUST equal the qid (`q1`); text/textarea `id` MUST equal the qid (`q3`). The submit JS relies on this exact mapping.
 - `<form id="quizForm">`, `<button id="submitBtn" type="button">`, `<pre id="answerOutput">`, `<div id="submitNotice">`, `<script id="restoreData" ...>`, `<script id="quizKey" ...>`, `<div id="gradingSummary">` all required. Every question's `<fieldset>` MUST contain a `<div class="feedback" id="fb-qN">` slot (empty initially).

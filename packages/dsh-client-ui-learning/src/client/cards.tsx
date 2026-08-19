@@ -1,12 +1,14 @@
 /**
  * Turn-tail learning cards: after a turn produces learning files, render an
  * 'open' card per produced kind (chapter / quiz / baseline / plan). No
- * learning artifact in the turn, no card.
+ * learning artifact in the turn, no card. Visuals share space.module.css so
+ * the cards and the space sit on the same dsh token system (and theme-plugin
+ * seams) — the class names keep the `card` substring the glassifier matches.
  */
 
-import type { CSSProperties } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import css from './space.module.css'
 import { openLearningSpace } from './store.ts'
 import { selectProducedLearning, type LearningCardItem, type LearningCardKind, type LearningCardsSelection } from './classify.ts'
 import type { NS } from './locales.ts'
@@ -34,44 +36,6 @@ export function selectLearningCards(owner: TurnTailOwnerProps): LearningCardsSel
   return selectProducedLearning(paths)
 }
 
-const rootStyle: CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: 8,
-  marginTop: 6,
-}
-
-const cardStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  border: '1px solid var(--dsw-alias-border-l1, rgba(255,255,255,0.14))',
-  borderRadius: 8,
-  padding: '6px 10px',
-  background: 'var(--dsw-alias-bg-card, rgba(255,255,255,0.04))',
-  fontSize: 12,
-}
-
-const openButtonStyle: CSSProperties = {
-  border: 'none',
-  borderRadius: 6,
-  padding: '4px 10px',
-  cursor: 'pointer',
-  fontSize: 12,
-  background: 'var(--dsw-alias-brand-primary, #4d7cfe)',
-  color: '#fff',
-}
-
-const externalStyle: CSSProperties = {
-  border: 'none',
-  background: 'none',
-  color: 'var(--dsw-alias-label-secondary, #9aa4b2)',
-  cursor: 'pointer',
-  fontSize: 11,
-  textDecoration: 'underline',
-  padding: 0,
-}
-
 type CardLabelKey = 'cardChapter' | 'cardQuiz' | 'cardBaseline' | 'cardPlan'
 
 const KIND_LABEL: Record<LearningCardKind, CardLabelKey> = {
@@ -94,21 +58,21 @@ export function LearningCards(
   }
   if (items.length === 0) return null
   return (
-    <div style={rootStyle}>
+    <div className={css.cardsRow}>
       {items.map(item => (
-        <div key={item.kind} style={cardStyle}>
-          <span>{t(KIND_LABEL[item.kind])}</span>
-          <span title={item.path}>{item.title}</span>
+        <div key={item.kind} className={css.learn_card}>
+          <span className={css.learnKind}>{t(KIND_LABEL[item.kind])}</span>
+          <span className={css.learnFile} title={item.path}>{item.title}</span>
           <button
             type='button'
-            style={openButtonStyle}
+            className={css.button + ' ' + css.buttonSm + ' ' + css.buttonPrimary}
             onClick={() => { openLearningSpace({ path: item.path, kind: item.kind }) }}
           >
             {t('cardOpen')}
           </button>
           <button
             type='button'
-            style={externalStyle}
+            className={css.learnExternal}
             onClick={() => { openFile(item.path) }}
           >
             {t('cardExternal')}

@@ -52,6 +52,13 @@ describe('classifyArtifact', () => {
     expect(classifyArtifact('/w/react-学习/章节/阶段1-章01-入门.html', zh)).toBe('chapter')
     expect(classifyArtifact('/w/react-学习/测验/阶段1-章01-测验.html', zh)).toBe('quiz')
   })
+  it('classifies the baseline in the quizzes dir (unified storage) and legacy dirs', () => {
+    expect(classifyArtifact('/w/react-learning/quizzes/baseline.html', en)).toBe('baseline')
+    expect(classifyArtifact('/w/react-学习/测验/基线测评.html', zh)).toBe('baseline')
+    expect(classifyArtifact('/w/react-学习/测验/基线测评-答案.json', zh)).toBe('other')
+    expect(classifyArtifact('/w/react-学习/测验/基线测评-批改.json', zh)).toBe('other')
+    expect(classifyArtifact('/w/react-学习/00-基线测评/基线测评.html', zh)).toBe('baseline')
+  })
 })
 
 describe('chapterKeyOf', () => {

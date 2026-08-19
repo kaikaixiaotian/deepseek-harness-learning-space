@@ -7,7 +7,7 @@
 const CHAPTER_DIRS = ['chapters', '章节']
 const QUIZ_DIRS = ['quizzes', '测验']
 const BASELINE_DIRS = ['00-baseline', '00-基线测评']
-const BASELINE_NAMES = ['baseline', '基线测评']
+const BASELINE_MARKERS = ['baseline', '基线测评']
 const PLAN_DIRS = ['plan', '计划']
 const PLAN_MARKERS = ['master-plan', '总目录']
 const QUIZ_MARKERS = ['-quiz', '-测验']
@@ -57,10 +57,10 @@ export function classifyPath(path: string): LearningCardKind | null {
   if (isChapterDir && segments.includes('viz')) return null
   if (isQuizDir) {
     if (ANSWERS_MARKERS.some(marker => name.includes(marker))) return null
-    if (BASELINE_NAMES.includes(name)) return 'baseline'
+    if (BASELINE_MARKERS.some(marker => name.toLowerCase().includes(marker))) return 'baseline'
     if (QUIZ_MARKERS.some(marker => name.includes(marker))) return 'quiz'
     if (name.includes('-total')) return 'quiz'
-    return null
+    return 'quiz'
   }
   if (isChapterDir) return 'chapter'
   if (isBaselineDir) {

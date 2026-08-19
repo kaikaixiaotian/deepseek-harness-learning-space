@@ -58,7 +58,6 @@ export const learningContribution: TypertRemoteContribution = {
 // - wire shapes -------------------------------------------------------------
 
 export interface LearningWorkspaceDirs {
-  readonly baseline: string
   readonly plan: string
   readonly chapters: string
   readonly quizzes: string

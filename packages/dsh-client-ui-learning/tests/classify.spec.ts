@@ -22,6 +22,11 @@ describe('classifyPath', () => {
     expect(classifyPath('C:/w/react-学习/00-基线测评/基线测评.html')).toBe('baseline')
     expect(classifyPath('C:/w/react-learning/00-baseline/baseline-answers.json')).toBeNull()
     expect(classifyPath('C:/w/react-learning/quizzes/baseline.html')).toBe('baseline')
+    // Unified storage: the baseline html lives in the quizzes dir, and its
+    // answers/grading files in the same dir stay out of the cards.
+    expect(classifyPath('C:/w/react-学习/测验/基线测评.html')).toBe('baseline')
+    expect(classifyPath('C:/w/react-学习/测验/基线测评-答案.json')).toBeNull()
+    expect(classifyPath('C:/w/react-学习/测验/基线测评-批改.json')).toBeNull()
     expect(classifyPath('C:/w/react-learning/plan/master-plan.html')).toBe('plan')
     expect(classifyPath('C:/w/react-学习/计划/总目录.html')).toBe('plan')
     expect(classifyPath('C:/w/react-learning/plan/sources/stage1-ch01.md')).toBeNull()
