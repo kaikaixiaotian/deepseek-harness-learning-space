@@ -72,8 +72,24 @@ if (-not $dshCommand -and -not $dshBin) {
 }
 
 function Invoke-DshPlugin([string[]]$PluginArgs) {
-    if ($dshBin) { & node $dshBin @PluginArgs } else { & dsh @PluginArgs }
-    if ($LASTEXITCODE -ne 0) { throw "dsh plugin failed: $($PluginArgs -join ' ')" }
+    # PowerShell 5.1 turns native stderr lines into terminating errors under
+    # $ErrorActionPreference='Stop' — relax it around the call, capture the
+    # combined output as plain strings, and decide on the EXIT CODE only.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $lines = if ($dshBin) { & node $dshBin @PluginArgs 2>&1 } else { & dsh @PluginArgs 2>&1 }
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+    $text = (($lines | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine)
+    if ($text -ne '') { Write-Host $text }
+    if ($LASTEXITCODE -ne 0) {
+        if ($text -match 'ERR_PNPM_UNEXPECTED_STORE') {
+            throw "pnpm on PATH (v$(& pnpm --version)) uses a different store than this profile was installed with. Fix by matching pnpm majors (e.g. 'npm i -g pnpm@11'), then re-run this installer."
+        }
+        throw "dsh plugin failed: $($PluginArgs -join ' ') (exit $LASTEXITCODE)"
+    }
 }
 
 # ---------- 1. source ----------
@@ -171,6 +187,26 @@ Info "preset -> $presetDest (fresh copy, generation bumped)"
 
 # ---------- 3. build ----------
 
+# PowerShell 5.1 turns native stderr into terminating errors under 'Stop';
+# run pnpm with a relaxed preference and decide on the exit code only.
+function Invoke-Pnpm([string[]]$PnpmArgs) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $lines = & pnpm @PnpmArgs 2>&1
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+    $text = (($lines | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine)
+    if ($LASTEXITCODE -ne 0) {
+        if ($text -match 'ERR_PNPM_UNEXPECTED_STORE' -or $text -match 'ERR_PNPM_ABORTED_REMOVE_MODULES_DIR') {
+            throw "pnpm on PATH (v$(& pnpm --version)) conflicts with these directories (installed by another pnpm major). Align it once with 'npm i -g pnpm@11', then re-run this installer."
+        }
+        Write-Host $text
+        throw "pnpm $($PnpmArgs -join ' ') failed (exit $LASTEXITCODE)"
+    }
+}
+
 Step 'building the two plugin packages'
 NextStep
 foreach ($pkg in @('dsh-learning', 'dsh-client-ui-learning')) {
@@ -178,10 +214,10 @@ foreach ($pkg in @('dsh-learning', 'dsh-client-ui-learning')) {
     if (-not (Test-Path (Join-Path $dir 'package.json'))) { throw "package not found: $dir" }
     Push-Location $dir
     try {
-        pnpm install --silent
-        if ($LASTEXITCODE -ne 0) { throw "pnpm install failed for $pkg" }
-        pnpm --silent bundle
-        if ($LASTEXITCODE -ne 0) { throw "pnpm bundle failed for $pkg" }
+        # No --silent anywhere: pnpm can swallow error details under it, and
+        # the friendly conflict hint needs the ERR_PNPM_* text.
+        Invoke-Pnpm @('install')
+        Invoke-Pnpm @('run', 'bundle')
     } finally {
         Pop-Location
     }
@@ -197,10 +233,7 @@ if (-not (Test-Path $profileDir)) {
 }
 foreach ($pkg in @('dsh-learning', 'dsh-client-ui-learning')) {
     $dir = (Resolve-Path (Join-Path $src "packages\$pkg")).Path
-    $out = Invoke-DshPlugin @('plugin', '--profile', $Profile, 'add', $dir) 2>&1
-    if ($out -match 'ERR_PNPM_UNEXPECTED_STORE') {
-        throw "pnpm on PATH (v$(& pnpm --version)) uses a different store than this profile was installed with. Fix by matching pnpm versions (e.g. 'npm i -g pnpm@11'), then re-run"
-    }
+    Invoke-DshPlugin @('plugin', '--profile', $Profile, 'add', $dir)
     Info "$pkg registered"
 }
 
