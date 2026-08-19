@@ -59,6 +59,11 @@ export const THEME_TOKENS = [
   // elevation
   '--dsw-shadow-lv1',
   '--dsw-shadow-lv2',
+  // glass-skin knobs (ui-aqua writes them onto <html>; they inherit down to
+  // body so the snapshot carries them into the iframe, letting the template
+  // overlays scale their frost with the user's slider)
+  '--dsh-aqua-blur',
+  '--dsh-aqua-frost',
 ] as const
 
 export interface ThemeSnapshot {
@@ -79,9 +84,29 @@ export function snapshotTheme(body: HTMLElement = document.body, root: HTMLEleme
   }
   return {
     css: declarations.join(''),
-    dark: body.hasAttribute('data-ds-dark-theme'),
+    dark: isHostDark(body, root, computed),
     glass: root.hasAttribute('data-dsh-aqua'),
   }
+}
+
+/**
+ * Dark-flag resolution: body[data-ds-dark-theme] is the presenter's canonical
+ * marker, with the root color-scheme as a second opinion — the presenter
+ * writes `color-scheme` onto <html>'s inline style on every apply, so a
+ * snapshot racing a marker flip still resolves the right scheme instead of
+ * silently marking the document ll-light (which blocks the templates'
+ * OS-preference dark fallback and paints a white canvas).
+ */
+function isHostDark(body: HTMLElement, root: HTMLElement, bodyComputed: CSSStyleDeclaration): boolean {
+  return resolveDarkFlag(body.hasAttribute('data-ds-dark-theme'), root.style.colorScheme, bodyComputed.colorScheme)
+}
+
+/** Pure scheme resolution (exported for tests): attribute first, then the
+ *  root's inline color-scheme, then the computed value. */
+export function resolveDarkFlag(bodyAttribute: boolean, inlineColorScheme: string, computedColorScheme: string): boolean {
+  if (bodyAttribute) return true
+  if (inlineColorScheme.trim() !== '') return inlineColorScheme.split(/\s+/).includes('dark')
+  return computedColorScheme.split(/\s+/).includes('dark')
 }
 
 /**
@@ -111,6 +136,40 @@ export function injectTheme(html: string, theme: ThemeSnapshot): string {
     return out
   }
   return style + html
+}
+
+// - live theme channel -----------------------------------------------------------
+
+/** Live theme push: while a document is open, the host re-announces the
+ *  palette into the iframe on every host theme change (mode switch, theme
+ *  plugin, glass-knob drag). Rebuilding srcDoc would reload the document and
+ *  wipe in-progress quiz answers, so templates ship a small listener that
+ *  applies the payload in place (swap #ll-theme rules + ll-* classes) and
+ *  acks. Files generated before the listener existed never ack — the viewer
+ *  then falls back to one srcDoc rebuild, which is what older code did
+ *  anyway. Standalone (file://) documents never receive a message. */
+export const LIVE_THEME_TYPE = 'll-theme'
+export const LIVE_THEME_ACK_TYPE = 'll-theme-ack'
+
+export interface LiveThemePayload {
+  readonly type: typeof LIVE_THEME_TYPE
+  readonly nonce: number
+  readonly css: string
+  readonly dark: boolean
+  readonly glass: boolean
+}
+
+/** Push a theme snapshot into an open iframe window. srcDoc documents have an
+ *  opaque (null) origin, so targetOrigin must be '*'. */
+export function postThemeUpdate(target: Window, theme: ThemeSnapshot, nonce: number): void {
+  const payload: LiveThemePayload = { type: LIVE_THEME_TYPE, nonce, css: theme.css, dark: theme.dark, glass: theme.glass }
+  target.postMessage(payload, '*')
+}
+
+/** True when `event` is a listener's ack echoing the given push nonce. */
+export function isThemeAck(event: MessageEvent, nonce: number): boolean {
+  const data = event.data as { type?: unknown; nonce?: unknown } | null
+  return data !== null && data.type === LIVE_THEME_ACK_TYPE && data.nonce === nonce
 }
 
 // - relative path helper ---------------------------------------------------------
@@ -163,11 +222,16 @@ export interface InlinedViz {
  * Rewrite relative iframe srcs into blob: URLs by reading each target
  * through `readFile`. http(s)/data/blob sources are left untouched; failed
  * reads keep the original src (the file:// fallback path stays meaningful).
+ * `transform` (e.g. injectTheme) re-skins each successfully read viz page so
+ * embedded demos open pre-themed — the parent page only forwards ll-theme
+ * pushes on host theme CHANGES, so without this a freshly opened demo sits
+ * on its standalone light fallback until the next flip.
  */
 export async function inlineRelativeIframes(
   html: string,
   readFile: (absolutePath: string) => Promise<string | null>,
   createObjectUrl: (content: string) => string = content => URL.createObjectURL(new Blob([content], { type: 'text/html' })),
+  transform: (content: string) => string = content => content,
 ): Promise<InlinedViz> {
   const objectUrls: string[] = []
   const rewrites = new Map<string, string>()
@@ -183,7 +247,7 @@ export async function inlineRelativeIframes(
       rewrites.delete(src)
       continue
     }
-    const url = createObjectUrl(content)
+    const url = createObjectUrl(transform(content))
     objectUrls.push(url)
     rewrites.set(src, url)
   }

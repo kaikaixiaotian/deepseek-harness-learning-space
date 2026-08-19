@@ -20,7 +20,7 @@ import css from './space.module.css'
 import { chapterKeyOf, fileBaseName, isSafeNoteBranch, noteBranchesOf } from './classify.ts'
 import { closeLearningSpace, learningSpaceState, subscribeLearningSpace } from './store.ts'
 import { getLearningFace, subscribeLearningFace, unwrap, type LearningEntry, type LearningNamespaceFace, type LearningWorkspaceView } from './remote.ts'
-import { bridgeReply, dirOf, inlineRelativeIframes, injectTheme, parseBridgeMessage, resolveRelative, snapshotTheme } from './bridge.ts'
+import { bridgeReply, dirOf, inlineRelativeIframes, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, postThemeUpdate, resolveRelative, snapshotTheme, type ThemeSnapshot } from './bridge.ts'
 import type { NS } from './locales.ts'
 
 export interface LearningSpaceProps extends PropsLocale<typeof NS>, GlobalStandardProps {}
@@ -292,21 +292,41 @@ function Viewer(props: ViewerProps) {
   const [content, setContent] = useState<{ text: string; truncated: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [docHtml, setDocHtml] = useState<string | null>(null)
+  const [docTheme, setDocTheme] = useState<ThemeSnapshot | null>(null)
+  const [rebuildTick, setRebuildTick] = useState(0)
   const [submitNotice, setSubmitNotice] = useState<string | null>(null)
   const [themeTick, setThemeTick] = useState(0)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const objectUrlsRef = useRef<string[]>([])
+  const themeNonceRef = useRef(0)
+  const themeAckRef = useRef<((nonce: number) => void) | null>(null)
 
-  // Re-enrich the srcDoc when the host page flips light/dark, or when a
-  // glass theme plugin (data-dsh-aqua on <html>) toggles — the snapshot
-  // carries the glass flag and the overridden token values either way.
+  // Re-enrich the srcDoc whenever the host theme changes. Two signals:
+  //  - the marker attributes (data-ds-dark-theme on body, data-dsh-aqua on
+  //    <html>) flip first, but the theme services re-resolve their tokens
+  //    asynchronously AFTER that — a snapshot taken on the attribute flip
+  //    still reads the previous palette;
+  //  - the resolved tokens are then written onto body's INLINE STYLE (the
+  //    theme runtime's token carrier), so watching that attribute is the
+  //    exact "tokens are new" signal: by the time it mutates, a snapshot
+  //    reads the fresh palette. The bump rides one animation frame to
+  //    coalesce bursts of mutations.
   useEffect(() => {
-    const bump = (): void => { setThemeTick(value => value + 1) }
-    const bodyObserver = new MutationObserver(bump)
-    const rootObserver = new MutationObserver(bump)
-    bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
-    rootObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-dsh-aqua'] })
-    return () => { bodyObserver.disconnect(); rootObserver.disconnect() }
+    let frame = 0
+    const bump = (): void => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => setThemeTick(value => value + 1))
+    }
+    const markers = new MutationObserver(bump)
+    const tokens = new MutationObserver(bump)
+    markers.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
+    markers.observe(document.documentElement, { attributes: true, attributeFilter: ['data-dsh-aqua'] })
+    tokens.observe(document.body, { attributes: true, attributeFilter: ['style'] })
+    // Glass-skin knobs (e.g. --dsh-aqua-blur / --dsh-aqua-frost) are written
+    // onto <html>'s inline style, not body's — watch that carrier too so
+    // slider drags re-snapshot the iframe palette.
+    tokens.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
+    return () => { cancelAnimationFrame(frame); markers.disconnect(); tokens.disconnect() }
   }, [])
 
   useEffect(() => {
@@ -328,35 +348,94 @@ function Viewer(props: ViewerProps) {
 
   // Enrich html documents before rendering: inline relative child iframes
   // (viz demos cannot resolve about:srcdoc-relative paths) and inject a
-  // snapshot of the host page's theme tokens.
+  // snapshot of the host page's theme tokens. Re-runs when the file changes
+  // or when the legacy fallback bumps rebuildTick (documents generated
+  // before the live theme listener existed re-theme via a rebuild).
   useEffect(() => {
     let cancelled = false
     const isHtml = selected !== null && /\.html?$/i.test(selected)
     if (content === null || !isHtml) {
       setDocHtml(null)
+      setDocTheme(null)
       return
     }
     void (async () => {
       const baseDir = dirOf(selected ?? '')
-      const { html, objectUrls } = await inlineRelativeIframes(content.text, async rel => {
-        const abs = resolveRelative(baseDir, rel)
-        try {
-          const result = await unwrap(await learning.readFile(sid, workspace.root, abs), 'readFile')
-          return result.content
-        } catch {
-          return null
-        }
-      })
+      // Snapshot BEFORE the (async) viz reads: the theme rides into the
+      // inlined demo blobs too, so chapter docs open with pre-themed demos
+      // instead of white standalone-fallback boxes.
+      const theme = snapshotTheme()
+      let html = content.text
+      let objectUrls: string[] = []
+      try {
+        const inlined = await inlineRelativeIframes(content.text, async rel => {
+          const abs = resolveRelative(baseDir, rel)
+          try {
+            const result = await unwrap(await learning.readFile(sid, workspace.root, abs), 'readFile')
+            return result.content
+          } catch {
+            return null
+          }
+        }, undefined, vizHtml => injectTheme(vizHtml, theme))
+        html = injectTheme(inlined.html, theme)
+        objectUrls = inlined.objectUrls
+      } catch {
+        // Viz inlining is an enhancement, never a blocker: fall back to the
+        // theme-injected raw document (dark canvas, demos keep their fallback
+        // link) rather than rendering an unthemed page or an eternal spinner.
+        html = injectTheme(content.text, theme)
+      }
       if (cancelled) {
         for (const url of objectUrls) URL.revokeObjectURL(url)
         return
       }
       for (const url of objectUrlsRef.current) URL.revokeObjectURL(url)
       objectUrlsRef.current = objectUrls
-      setDocHtml(injectTheme(html, snapshotTheme()))
+      setDocHtml(html)
+      setDocTheme(theme)
     })()
     return () => { cancelled = true }
-  }, [content, selected, themeTick, learning, sid, workspace])
+  }, [content, selected, rebuildTick, learning, sid, workspace])
+
+  // Live theme channel, receive side: templates ack every push by echoing
+  // the nonce, which clears the legacy-fallback timer for that push.
+  useEffect(() => {
+    const handler = (event: MessageEvent): void => {
+      const iframe = iframeRef.current
+      if (iframe === null || event.source !== iframe.contentWindow) return
+      const data = event.data as { type?: unknown; nonce?: unknown } | null
+      if (data !== null && data.type === LIVE_THEME_ACK_TYPE && typeof data.nonce === 'number') {
+        themeAckRef.current?.(data.nonce)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => { window.removeEventListener('message', handler) }
+  }, [])
+
+  // Live theme channel, send side: on a host theme change push the fresh
+  // palette into the open document so it re-skins in place — a srcDoc rebuild
+  // would reload it and wipe in-progress quiz answers. When the current host
+  // theme already matches what the document was built with there is nothing
+  // to push (this guard also stops the legacy fallback from looping, since a
+  // rebuild bakes the new theme into docTheme). Documents without the
+  // listener never ack; after a short timeout fall back to one rebuild,
+  // which is the pre-listener behavior.
+  useEffect(() => {
+    if (docHtml === null || docTheme === null) return
+    const theme = snapshotTheme()
+    if (theme.css === docTheme.css && theme.dark === docTheme.dark && theme.glass === docTheme.glass) return
+    const window_ = iframeRef.current?.contentWindow
+    if (window_ === undefined || window_ === null) return
+    const nonce = ++themeNonceRef.current
+    postThemeUpdate(window_, theme, nonce)
+    const timer = window.setTimeout(() => {
+      if (themeNonceRef.current === nonce) setRebuildTick(value => value + 1)
+    }, 400)
+    themeAckRef.current = received => {
+      if (received === nonce) window.clearTimeout(timer)
+    }
+    return () => { window.clearTimeout(timer) }
+  }, [themeTick, docHtml, docTheme])
 
   useEffect(() => () => {
     for (const url of objectUrlsRef.current) URL.revokeObjectURL(url)
@@ -414,12 +493,21 @@ function Viewer(props: ViewerProps) {
               ? <div className={css.centerState}>{t('loading')}</div>
               : isHtml
                 ? (
-                  <iframe
-                    ref={iframeRef}
-                    className={css.viewerIframe}
-                    srcDoc={docHtml ?? content.text}
-                    title={selected}
-                  />
+                  docHtml === null
+                    // Enrichment (viz inlining + theme injection) is in
+                    // flight: render a placeholder, never the RAW file — the
+                    // raw document has no ll-* classes, so on a light-OS host
+                    // its fallback palette paints a white canvas over the
+                    // dark space until the themed srcDoc swaps in.
+                    ? <div className={css.centerState}>{t('loading')}</div>
+                    : (
+                      <iframe
+                        ref={iframeRef}
+                        className={css.viewerIframe}
+                        srcDoc={docHtml}
+                        title={selected}
+                      />
+                    )
                 )
                 : <pre className={css.viewerPre}>{content.text}</pre>}
           {submitNotice !== null && <div className={css.submitOk}>{t('quizSubmitted')}: {fileBaseName(submitNotice)}</div>}

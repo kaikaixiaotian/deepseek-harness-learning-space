@@ -2,6 +2,7 @@ node_modules/
 lib/
 .mimosa/
 .zcode/
+.playwright-mcp
 design/
 *.tgz
 *.tmp-*

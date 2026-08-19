@@ -11,7 +11,10 @@ import {
   dirOf,
   injectTheme,
   inlineRelativeIframes,
+  isThemeAck,
   parseBridgeMessage,
+  postThemeUpdate,
+  resolveDarkFlag,
   resolveRelative,
   type ThemeSnapshot,
 } from '../src/client/bridge.ts'
@@ -51,6 +54,22 @@ describe('injectTheme', () => {
     const out = injectTheme('<p>fragment</p>', LIGHT)
     expect(out.startsWith('<style id="ll-theme">')).toBe(true)
     expect(out).toContain('<p>fragment</p>')
+  })
+})
+
+describe('postThemeUpdate / isThemeAck', () => {
+  it('posts the full theme payload with targetOrigin star for opaque srcDoc origins', () => {
+    const posted: unknown[] = []
+    const target = { postMessage: (data: unknown, origin: string) => { posted.push({ data, origin }) } } as unknown as Window
+    postThemeUpdate(target, GLASS, 42)
+    expect(posted).toEqual([{ data: { type: 'll-theme', nonce: 42, css: GLASS.css, dark: true, glass: true }, origin: '*' }])
+  })
+  it('matches acks only on the echoed nonce', () => {
+    const event = { data: { type: 'll-theme-ack', nonce: 7 } } as unknown as MessageEvent
+    expect(isThemeAck(event, 7)).toBe(true)
+    expect(isThemeAck(event, 8)).toBe(false)
+    expect(isThemeAck({ data: { type: 'll-read', nonce: 7 } } as unknown as MessageEvent, 7)).toBe(false)
+    expect(isThemeAck({ data: null } as unknown as MessageEvent, 7)).toBe(false)
   })
 })
 
@@ -100,6 +119,30 @@ describe('inlineRelativeIframes', () => {
     const result = await inlineRelativeIframes(html, async () => '<p>x</p>')
     expect(result.html).toBe(html)
     expect(result.objectUrls).toEqual([])
+  })
+  it('applies the transform to inlined viz content before the blob url is minted', async () => {
+    let blobbed = ''
+    const { html } = await inlineRelativeIframes(
+      '<iframe src="./viz/a.html"></iframe>',
+      async () => '<html><body>viz</body></html>',
+      content => { blobbed = content; return 'blob:x' },
+      content => content.replace('<body>', '<body data-themed>'),
+    )
+    // the blob carries the TRANSFORMED document (theme-injected demo)
+    expect(blobbed).toContain('data-themed')
+    expect(html).toContain('blob:x')
+  })
+})
+
+describe('resolveDarkFlag', () => {
+  it('takes the body attribute first and falls back through the color-scheme chain', () => {
+    expect(resolveDarkFlag(true, 'light', 'light')).toBe(true)
+    expect(resolveDarkFlag(false, 'dark', 'light')).toBe(true)
+    // the root's inline color-scheme beats the computed value
+    expect(resolveDarkFlag(false, 'light', 'dark')).toBe(false)
+    expect(resolveDarkFlag(false, '', 'dark light')).toBe(true)
+    expect(resolveDarkFlag(false, '  ', 'light')).toBe(false)
+    expect(resolveDarkFlag(false, '', '')).toBe(false)
   })
 })
 

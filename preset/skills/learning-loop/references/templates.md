@@ -381,15 +381,66 @@ Standalone, double-click-to-open, vanilla JS, no external deps. Follow this skel
 <head>
 <meta charset="UTF-8">
 <title><KP 概念名> — 交互演示</title>
+<!-- learning-loop skeleton: viz -->
 <style>
-  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; color: #1a1a1a; }
+  /* ===== dsh design system (same token layer as the chapter/quiz skeletons) =====
+     This demo is embedded in the chapter page as an iframe: the learning
+     space injects the host theme (ll-dark/ll-light/ll-glass + resolved
+     --dsw-alias-* tokens) when inlining it, and the chapter page forwards
+     live ll-theme pushes — so the demo follows the dsh host theme (incl.
+     theme plugins) for free. Standalone (file://) dark follows the OS via
+     the media query with the dsh dark statics. NEVER define --dsw-* /
+     --dsh-* variables here — consume with fallbacks only (contamination
+     guard; mind the spaces around any slash-star inside comments). */
+  :root{
+    --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#ffffff);
+    --text:var(--dsw-alias-label-primary,rgb(15,17,21)); --muted:var(--dsw-alias-label-secondary,rgb(97,102,107));
+    --accent:var(--dsw-alias-state-business-primary,rgb(65,118,230)); --accent-soft:var(--dsw-alias-state-business-tertiary,rgb(228,237,253));
+    --border:var(--dsw-alias-border-l1,rgba(0,0,0,0.04)); --hairline:var(--dsw-alias-border-l2,rgba(0,0,0,0.1));
+    --ok:var(--dsw-alias-state-success-primary,rgb(34,197,94)); --ok-soft:var(--dsw-alias-state-success-tertiary,rgb(230,250,237));
+    --err:var(--dsw-alias-state-error-primary,rgb(236,19,19)); --err-soft:rgba(254,242,242,0.9);
+    --r:14px;
+    --font-sans:var(--dsw-font-family,-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif);
+  }
+  @media (prefers-color-scheme:dark){html:not(.ll-light){
+    color-scheme:dark;
+    --bg:rgb(21,21,23); --surface:rgb(35,35,36);
+    --text:rgb(249,250,251); --muted:rgb(207,211,214);
+    --accent:rgb(103,158,254); --accent-soft:rgb(52,65,91);
+    --border:rgba(255,255,255,0.06); --hairline:rgba(255,255,255,0.12);
+    --ok:rgb(34,197,94); --ok-soft:rgb(35,60,44);
+    --err:rgb(242,90,90); --err-soft:rgba(87,12,12,0.5);
+  }}
+  /* in-space dark: token-consuming restatement with dark static fallbacks —
+     a snapshot gap lands on the dark statics, never a white canvas. */
+  html.ll-dark{
+    color-scheme:dark;
+    --bg:var(--dsw-alias-bg-base,rgb(21,21,23)); --surface:var(--dsw-alias-bg-layer-1,rgb(35,35,36));
+    --text:var(--dsw-alias-label-primary,rgb(249,250,251)); --muted:var(--dsw-alias-label-secondary,rgb(207,211,214));
+    --accent:var(--dsw-alias-state-business-primary,rgb(103,158,254)); --accent-soft:var(--dsw-alias-state-business-tertiary,rgb(52,65,91));
+    --border:var(--dsw-alias-border-l1,rgba(255,255,255,0.06)); --hairline:var(--dsw-alias-border-l2,rgba(255,255,255,0.12));
+    --ok:var(--dsw-alias-state-success-primary,rgb(34,197,94)); --ok-soft:var(--dsw-alias-state-success-tertiary,rgb(35,60,44));
+    --err:var(--dsw-alias-state-error-primary,rgb(242,90,90)); --err-soft:rgba(87,12,12,0.5);
+  }
+  /* glass skin (host marks <html> with ll-glass): transparent canvas over
+     the chapter's figure card, the stage a frost-scaled overlay */
+  html.ll-glass{
+    --bg:transparent;
+    --ll-frost:var(--dsh-aqua-frost, 1);
+    --surface:color-mix(in srgb, var(--dsw-alias-bg-layer-1,#ffffff) calc(30% * var(--ll-frost)), transparent);
+    --accent-soft:color-mix(in srgb, var(--dsw-alias-state-business-tertiary,rgb(228,237,253)) calc(55% * var(--ll-frost)), transparent);
+  }
+  *{box-sizing:border-box;}
+  body { font-family:var(--font-sans); max-width: 760px; margin: 24px auto; padding: 0 16px; color:var(--text); background:var(--bg); }
   h1 { font-size: 1.3rem; }
-  .stage { /* 主可视化区域 */ min-height: 240px; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 12px 0; background: #fafafa; }
+  .stage { /* 主可视化区域 */ min-height: 240px; border: 1px solid var(--hairline); border-radius: var(--r); padding: 16px; margin: 12px 0; background: var(--surface); }
   .controls { margin: 12px 0; }
-  .controls button, .controls input[type="range"] { padding: 6px 12px; margin-right: 8px; }
-  .legend { font-size: 0.85rem; color: #666; margin-top: 8px; }
+  .controls button { padding: 6px 14px; margin-right: 8px; border: none; border-radius: 999px; background: var(--accent-soft); color: var(--accent); cursor: pointer; font: inherit; }
+  .controls button:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+  .controls input[type="range"] { accent-color: var(--accent); }
+  .legend { font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
   /* 状态用颜色区分：新鲜/过期等 */
-  .fresh { background: #d4edda; } .stale { background: #f8d7da; }
+  .fresh { background: var(--ok-soft); } .stale { background: var(--err-soft); }
 </style>
 </head>
 <body>
@@ -450,18 +501,42 @@ Standalone, double-click-to-open, vanilla JS, no external deps. Follow this skel
   if (window.MutationObserver) { new MutationObserver(reportHeight).observe(document.body, { childList: true, subtree: true, attributes: true }); }
 })();
 </script>
+<script>
+/* Live theme channel (learning space): the host pushes palette updates so
+   theme switches and glass-knob drags re-skin this page in place instead of
+   reloading it. Standalone (file://) never receives a message. Keep verbatim. */
+(function () {
+  function llApplyTheme(t) {
+    var el = document.getElementById('ll-theme');
+    if (!el) { el = document.createElement('style'); el.id = 'll-theme'; document.head.appendChild(el); }
+    el.textContent = ':root{' + t.css + '}';
+    var cl = document.documentElement.classList;
+    cl.toggle('ll-dark', !!t.dark); cl.toggle('ll-light', !t.dark); cl.toggle('ll-glass', !!t.glass);
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.type !== 'll-theme' || typeof d.css !== 'string') return;
+    llApplyTheme(d);
+    var frames = document.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) { try { frames[i].contentWindow.postMessage(d, '*'); } catch (e) {} }
+    try { if (ev.source) ev.source.postMessage({ type: 'll-theme-ack', nonce: d.nonce }, '*'); } catch (e) {}
+  });
+})();
+</script>
 </body>
 </html>
 ```
 
 **Skeleton non-negotiables** (mirror `visualization.md`):
 - All CSS/JS inline; no `<script src>`, no `<link>` to CDN.
+- **Style-token discipline (same as read-mode/quiz-form):** copy the skeleton `<style>` verbatim — the demo consumes `--dsw-alias-*` tokens with the dsh static palette as fallback, so it follows the host theme (dark + theme plugins + glass) when embedded and the OS scheme standalone. A demo generated with hardcoded light colors renders as a WHITE BOX inside a dark chapter doc. Every generated demo MUST carry the `<!-- learning-loop skeleton: viz -->` signature in its `<head>`.
 - `'use strict'` and an IIFE wrapping the script (no globals leaking).
 - At least one bound interaction (button/slider/click) that visibly changes the stage.
 - A reset control.
 - Chinese labels matching chapter terminology.
 - The `render()` pattern: one function that reads `state` and repaints everything; interactions only mutate `state` then call `render()`. This avoids partial-update bugs.
 - **Auto-height (keep the snippet):** the skeleton's `reportHeight()` posts `document.documentElement.scrollHeight` to the parent on load / resize / DOM-change; the chapter page resizes the iframe to fit. Never delete it or hard-set a tiny iframe height — clipped controls are the #1 demo usability bug.
+- **Live theme channel (keep the snippet):** the `llApplyTheme` listener at the end of `<body>` re-skins the demo in place when the host pushes `{type:'ll-theme',...}` — the chapter page forwards these pushes into embedded demo iframes. Standalone (file://) never receives a message.
 
 ---
 
@@ -491,8 +566,10 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
      palette arrives for free). The accent is the dsh business blue family
      (state-business-*): --dsw-alias-brand-primary is monochrome black in dsh
      light mode and must NOT drive selection/accent UI here. NEVER define
-     --dsw-*/--dsh-* variables here — consume with fallbacks only
-     (contamination guard). */
+     --dsw-* / --dsh-* variables here — consume with fallbacks only
+     (contamination guard; the spaces around the slash matter: a bare
+     star-slash sequence CLOSES this comment early and the parser then
+     swallows the whole :root block as a bad selector). */
   :root{
     --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#ffffff); --surface-2:var(--dsw-alias-bg-layer-2,#ffffff); --skeleton:var(--dsw-alias-bg-skeleton,rgba(0,0,0,0.04));
     --text:var(--dsw-alias-label-primary,rgb(15,17,21)); --muted:var(--dsw-alias-label-secondary,rgb(97,102,107)); --faint:var(--dsw-alias-label-tertiary,rgb(129,133,140));
@@ -513,11 +590,10 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
   }
   /* dark palette = the dsh dark STATIC values. Standalone (file://) dark is
      the media query; inside the learning space the host marks <html> with
-     ll-dark / ll-light instead (the bridge also injects the resolved tokens,
-     which win over these plain values because the class rules only apply
-     where marked). Media queries cannot be OR-ed with class selectors,
-     hence the duplication. */
+     ll-dark / ll-light instead and injects the resolved tokens. Media
+     queries cannot be OR-ed with class selectors, hence the duplication. */
   @media (prefers-color-scheme:dark){html:not(.ll-light){
+    color-scheme:dark;
     --bg:rgb(21,21,23); --surface:rgb(35,35,36); --surface-2:rgb(44,44,46); --skeleton:rgba(255,255,255,0.08);
     --text:rgb(249,250,251); --muted:rgb(207,211,214); --faint:rgb(173,178,184);
     --accent:rgb(103,158,254); --accent-soft:rgb(52,65,91); --accent-border:rgba(255,255,255,0.16);
@@ -528,24 +604,50 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
     --ok:rgb(34,197,94); --err:rgb(242,90,90); --warn:rgb(245,158,11);
     --code-bg:rgb(27,27,28); --inline-code:rgb(44,44,46);
   }}
+  /* in-space dark: ll-dark re-declares EVERY scheme-dependent var consuming
+     the injected tokens with the dsh dark statics as fallback — tokens
+     present → the host palette (incl. theme-plugin overrides) wins; a token
+     snapshot gap → dark statics, never the light :root fallbacks (which
+     paint a white canvas over the dark host). Keep the var list in sync
+     with the :root block above. */
   html.ll-dark{
-    --obj-bg:rgb(52,65,91); --obj-bd:rgb(103,158,254);
-    --kp-bg:rgb(39,36,31); --kp-bd:rgb(245,158,11); --kp-text:rgb(247,173,49);
+    color-scheme:dark;
+    --bg:var(--dsw-alias-bg-base,rgb(21,21,23)); --surface:var(--dsw-alias-bg-layer-1,rgb(35,35,36)); --surface-2:var(--dsw-alias-bg-layer-2,rgb(44,44,46)); --skeleton:var(--dsw-alias-bg-skeleton,rgba(255,255,255,0.08));
+    --text:var(--dsw-alias-label-primary,rgb(249,250,251)); --muted:var(--dsw-alias-label-secondary,rgb(207,211,214)); --faint:var(--dsw-alias-label-tertiary,rgb(173,178,184));
+    --accent:var(--dsw-alias-state-business-primary,rgb(103,158,254)); --accent-soft:var(--dsw-alias-state-business-tertiary,rgb(52,65,91)); --accent-border:var(--dsw-alias-border-l3,rgba(255,255,255,0.16));
+    --hover:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,0.08));
+    --border:var(--dsw-alias-border-l1,rgba(255,255,255,0.06)); --hairline:var(--dsw-alias-border-l2,rgba(255,255,255,0.12));
+    --obj-bg:var(--dsw-alias-state-business-tertiary,rgb(52,65,91)); --obj-bd:var(--dsw-alias-state-business-primary,rgb(103,158,254));
+    --kp-bg:var(--dsw-alias-state-warn-tertiary,rgb(39,36,31)); --kp-bd:var(--dsw-alias-state-warn-primary,rgb(245,158,11)); --kp-text:var(--dsw-alias-state-warn-label,rgb(247,173,49));
+    --ok:var(--dsw-alias-state-success-primary,rgb(34,197,94)); --err:var(--dsw-alias-state-error-primary,rgb(242,90,90)); --warn:var(--dsw-alias-state-warn-primary,rgb(245,158,11));
+    --code-bg:var(--dsw-alias-markdown-code-block,rgb(27,27,28)); --inline-code:var(--dsw-alias-markdown-inline-code,rgb(44,44,46));
   }
   /* glass theme (host marks <html> with ll-glass while a glass skin like
-     ui-aqua is active): the host cards under this page turn translucent, so
-     an opaque canvas would read as a solid slab glued onto glass. Turn the
-     canvas transparent, make the card fills low-alpha overlays, and let the
-     host's ambient/wallpaper show through from behind the card. */
+     ui-aqua is active): the canvas takes NO fill of its own — the page sits
+     directly on the host viewer card's glass, exactly like the sibling
+     tree/notes cards. Only the CONTENT blocks paint translucent overlays
+     ("glass in glass"), every overlay an alpha mix of the injected host
+     tokens so light glass stays misty and dark glass stays deep-sea. The
+     overlay alphas scale with the injected --dsh-aqua-frost knob (default
+     1), so the user's frost slider drives the in-page frost too. (The blur
+     knob cannot apply here: backdrop-filter inside an iframe cannot sample
+     the host page behind it — blur is carried by the host card itself.) */
   html.ll-glass{
-    --bg:transparent;
-    --surface:color-mix(in srgb, rgb(34 38 47) 34%, transparent);
-    --surface-2:color-mix(in srgb, rgb(34 38 47) 44%, transparent);
-    --skeleton:color-mix(in srgb, rgb(34 38 47) 22%, transparent);
-    --code-bg:rgba(12,18,27,0.5); --inline-code:rgba(22,33,48,0.72);
-    --obj-bg:rgba(65,118,230,0.16); --kp-bg:rgba(245,158,11,0.12);
-    --hover:rgba(148,180,220,0.1);
+    --bg:transparent; --surface:transparent;
+    --ll-frost:var(--dsh-aqua-frost, 1);
+    --skeleton:color-mix(in srgb, var(--dsw-alias-bg-layer-2, #ffffff) calc(22% * var(--ll-frost)), transparent);
+    --code-bg:color-mix(in srgb, var(--dsw-alias-markdown-code-block, rgb(249,250,251)) calc(55% * var(--ll-frost)), transparent);
+    --inline-code:color-mix(in srgb, var(--dsw-alias-markdown-inline-code, rgb(235,238,242)) calc(65% * var(--ll-frost)), transparent);
+    --obj-bg:color-mix(in srgb, var(--dsw-alias-state-business-tertiary, rgb(228,237,253)) calc(55% * var(--ll-frost)), transparent);
+    --kp-bg:color-mix(in srgb, var(--dsw-alias-state-warn-tertiary, rgb(254,245,231)) calc(55% * var(--ll-frost)), transparent);
+    --hover:color-mix(in srgb, var(--dsw-alias-interactive-bg-hover, rgba(38,49,72,0.06)) calc(75% * var(--ll-frost)), transparent);
   }
+  /* content-block overlays: concept cards are light shells, the inner
+     checkpoint details sit more opaque than their section */
+  html.ll-glass ol.elements{background:color-mix(in srgb, var(--dsw-alias-bg-layer-1, #ffffff) calc(30% * var(--ll-frost)), transparent);}
+  html.ll-glass section.checkpoint{background:color-mix(in srgb, var(--dsw-alias-state-business-tertiary, rgb(228,237,253)) calc(55% * var(--ll-frost)), transparent);}
+  html.ll-glass section.checkpoint details{background:color-mix(in srgb, var(--dsw-alias-bg-layer-1, #ffffff) calc(45% * var(--ll-frost)), transparent);}
+  html.ll-glass figure.viz{background:color-mix(in srgb, var(--dsw-alias-bg-layer-1, #ffffff) calc(30% * var(--ll-frost)), transparent);}
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
   body{font-family:var(--font-sans); background:var(--bg); color:var(--text); font:var(--dsw-font-markdown-base,16px/28px var(--font-sans)); margin:0; -webkit-font-smoothing:antialiased;}
@@ -838,6 +940,30 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
     });
   })();
 </script>
+<script>
+/* Live theme channel (learning space): the host pushes palette updates so
+   theme switches and glass-knob drags re-skin this page in place instead of
+   reloading it (reloading would wipe in-progress quiz answers) — and this
+   page forwards the update into its embedded demo iframes so they re-skin
+   too. Standalone (file://) never receives a message. Keep verbatim. */
+(function () {
+  function llApplyTheme(t) {
+    var el = document.getElementById('ll-theme');
+    if (!el) { el = document.createElement('style'); el.id = 'll-theme'; document.head.appendChild(el); }
+    el.textContent = ':root{' + t.css + '}';
+    var cl = document.documentElement.classList;
+    cl.toggle('ll-dark', !!t.dark); cl.toggle('ll-light', !t.dark); cl.toggle('ll-glass', !!t.glass);
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.type !== 'll-theme' || typeof d.css !== 'string') return;
+    llApplyTheme(d);
+    var frames = document.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) { try { frames[i].contentWindow.postMessage(d, '*'); } catch (e) {} }
+    try { if (ev.source) ev.source.postMessage({ type: 'll-theme-ack', nonce: d.nonce }, '*'); } catch (e) {}
+  });
+})();
+</script>
 </body>
 </html>
 ```
@@ -867,7 +993,9 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
      overrides (ui-aqua snapshots arrive already re-tinted). The accent is
      the dsh business blue family (state-business-*); --dsw-alias-brand-primary
      is monochrome black in dsh light mode and must NOT drive selection UI.
-     NEVER define --dsw-*/--dsh-* variables here (contamination guard). */
+     NEVER define --dsw-* / --dsh-* variables here (contamination guard; the
+     spaces around the slash matter: star-slash inside a CSS comment closes
+     it early and the parser swallows the :root block as a bad selector). */
   :root{
     --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#ffffff); --skeleton:var(--dsw-alias-bg-skeleton,rgba(0,0,0,0.04));
     --text:var(--dsw-alias-label-primary,rgb(15,17,21)); --muted:var(--dsw-alias-label-secondary,rgb(97,102,107)); --faint:var(--dsw-alias-label-tertiary,rgb(129,133,140));
@@ -891,6 +1019,7 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
      inside the learning space the host marks <html> with ll-dark / ll-light
      (same gating as read-mode) and injects the resolved tokens. */
   @media (prefers-color-scheme:dark){html:not(.ll-light){
+    color-scheme:dark;
     --bg:rgb(21,21,23); --surface:rgb(35,35,36); --skeleton:rgba(255,255,255,0.08);
     --text:rgb(249,250,251); --muted:rgb(207,211,214); --faint:rgb(173,178,184);
     --ink-fg:rgb(15,17,21);
@@ -903,25 +1032,49 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
     --warn:rgb(245,158,11); --warn-soft:rgb(39,36,31);
     --code-bg:rgb(27,27,28); --inline-code:rgb(44,44,46);
   }}
+  /* in-space dark: full token-consuming restatement with dark static
+     fallbacks — a token snapshot gap must land on the dark statics, never
+     the light :root fallbacks (white canvas). Keep in sync with :root. */
   html.ll-dark{
-    --ok-soft:rgb(35,60,44); --err-soft:rgba(87,12,12,0.5); --warn-soft:rgb(39,36,31);
+    color-scheme:dark;
+    --bg:var(--dsw-alias-bg-base,rgb(21,21,23)); --surface:var(--dsw-alias-bg-layer-1,rgb(35,35,36)); --skeleton:var(--dsw-alias-bg-skeleton,rgba(255,255,255,0.08));
+    --text:var(--dsw-alias-label-primary,rgb(249,250,251)); --muted:var(--dsw-alias-label-secondary,rgb(207,211,214)); --faint:var(--dsw-alias-label-tertiary,rgb(173,178,184));
+    --ink-fg:var(--dsw-alias-label-primary-foreground,rgb(15,17,21));
+    --accent:var(--dsw-alias-state-business-primary,rgb(103,158,254)); --accent-soft:var(--dsw-alias-state-business-tertiary,rgb(52,65,91));
+    --hover:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,0.08));
+    --border:var(--dsw-alias-border-l1,rgba(255,255,255,0.06)); --hairline:var(--dsw-alias-border-l2,rgba(255,255,255,0.12));
+    --primary-fill:var(--dsw-alias-button-primary-fill,rgb(249,250,251)); --primary-hover:var(--dsw-alias-button-primary-hover,rgb(235,238,242));
+    --ok:var(--dsw-alias-state-success-primary,rgb(34,197,94)); --ok-soft:var(--dsw-alias-state-success-tertiary,rgb(35,60,44));
+    --err:var(--dsw-alias-state-error-primary,rgb(242,90,90)); --err-soft:rgba(87,12,12,0.5);
+    --warn:var(--dsw-alias-state-warn-primary,rgb(245,158,11)); --warn-soft:var(--dsw-alias-state-warn-tertiary,rgb(39,36,31));
+    --code-bg:var(--dsw-alias-markdown-code-block,rgb(27,27,28)); --inline-code:var(--dsw-alias-markdown-inline-code,rgb(44,44,46));
   }
   /* glass theme (host marks <html> with ll-glass under a glass skin like
-     ui-aqua): transparent canvas + low-alpha overlays so the host card's
-     glass and the ambient behind it stay visible. */
+     ui-aqua): the canvas takes NO fill of its own — the page sits directly
+     on the host viewer card's glass like the sibling tree/notes cards. Only
+     content blocks paint translucent overlays ("glass in glass"): question
+     cards are light shells, options/inputs sit MORE opaque than the cards,
+     every overlay an alpha mix of the injected host tokens. Overlay alphas
+     scale with the injected --dsh-aqua-frost knob (default 1), so the
+     user's frost slider drives the in-page frost; blur cannot apply inside
+     an iframe (the host card carries it). */
   html.ll-glass{
-    --bg:transparent;
-    --surface:color-mix(in srgb, rgb(34 38 47) 34%, transparent);
-    --skeleton:color-mix(in srgb, rgb(34 38 47) 22%, transparent);
-    --ink-fg:#0C121B;
-    --hover:rgba(148,180,220,0.1);
-    --primary-fill:#EAF2FC; --primary-hover:#DCE7F4;
-    --ok-soft:rgba(34,197,94,0.14); --err-soft:rgba(242,90,90,0.14); --warn-soft:rgba(245,158,11,0.14);
-    --code-bg:rgba(12,18,27,0.5); --inline-code:rgba(22,33,48,0.72);
+    --bg:transparent; --surface:transparent;
+    --ll-frost:var(--dsh-aqua-frost, 1);
+    --skeleton:color-mix(in srgb, var(--dsw-alias-bg-layer-2, #ffffff) calc(22% * var(--ll-frost)), transparent);
+    --code-bg:color-mix(in srgb, var(--dsw-alias-markdown-code-block, rgb(249,250,251)) calc(55% * var(--ll-frost)), transparent);
+    --inline-code:color-mix(in srgb, var(--dsw-alias-markdown-inline-code, rgb(235,238,242)) calc(65% * var(--ll-frost)), transparent);
+    --ok-soft:color-mix(in srgb, var(--dsw-alias-state-success-tertiary, rgb(230,250,237)) calc(55% * var(--ll-frost)), transparent);
+    --err-soft:color-mix(in srgb, var(--err, rgba(254,242,242,0.9)) calc(35% * var(--ll-frost)), transparent);
+    --warn-soft:color-mix(in srgb, var(--dsw-alias-state-warn-tertiary, rgb(254,245,231)) calc(55% * var(--ll-frost)), transparent);
+    --hover:color-mix(in srgb, var(--dsw-alias-interactive-bg-hover, rgba(38,49,72,0.06)) calc(75% * var(--ll-frost)), transparent);
   }
-  html.ll-glass label.option, html.ll-glass input[type=text], html.ll-glass textarea{
-    background:color-mix(in srgb, rgb(255 255 255) 5%, transparent);
-  }
+  /* glass layering: question card = light shell; option/input rows sit
+     MORE opaque than the card (controls read as raised glass) */
+  html.ll-glass fieldset.question{background:color-mix(in srgb, var(--dsw-alias-bg-layer-1, #ffffff) calc(30% * var(--ll-frost)), transparent);}
+  html.ll-glass label.option, html.ll-glass input[type=text], html.ll-glass textarea{background:color-mix(in srgb, var(--dsw-alias-bg-layer-1, #ffffff) calc(55% * var(--ll-frost)), transparent);}
+  html.ll-glass label.option:has(input:checked){background:color-mix(in srgb, var(--dsw-alias-state-business-tertiary, rgb(228,237,253)) calc(65% * var(--ll-frost)), transparent);}
+  html.ll-glass .controls{background:linear-gradient(color-mix(in srgb, var(--dsw-alias-bg-base, #ffffff) calc(82% * var(--ll-frost)), transparent) 60%, transparent);}
   *{box-sizing:border-box;}
   html{scrollbar-width:thin; scrollbar-color:var(--dsw-alias-scrollbar-bg-l1,rgb(229,229,229)) transparent;}
   ::-webkit-scrollbar{width:8px;} ::-webkit-scrollbar-track{background:transparent;}
@@ -948,7 +1101,6 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
   /* controls: dsh capsule buttons; primary = the monochrome brand fill
      (black in light / white in dark) like the host's own primary buttons */
   .controls{position:sticky; bottom:0; background:linear-gradient(var(--bg) 55%, transparent); padding:18px 0 6px; border-top:none; text-align:center; margin-top:24px;}
-  html.ll-glass .controls{background:linear-gradient(color-mix(in srgb, rgb(12 18 27) 72%, transparent) 55%, transparent);}
   button{height:40px; padding:0 22px; margin:0 6px; border:none; border-radius:20px; font-size:.95rem; line-height:22px; font-weight:500; cursor:pointer; font-family:inherit; transition:background .1s var(--ease);}
   #submitBtn{background:var(--primary-fill); color:var(--ink-fg);}
   #submitBtn:hover{background:var(--primary-hover);}
@@ -1226,6 +1378,29 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
       .catch(function () { restoreFromCache(slug); });
   }
   restore();
+})();
+</script>
+<script>
+/* Live theme channel (learning space): the host pushes palette updates so
+   theme switches and glass-knob drags re-skin this page in place instead of
+   reloading it — reloading would wipe in-progress answers. Standalone
+   (file://) never receives a message. Keep verbatim. */
+(function () {
+  function llApplyTheme(t) {
+    var el = document.getElementById('ll-theme');
+    if (!el) { el = document.createElement('style'); el.id = 'll-theme'; document.head.appendChild(el); }
+    el.textContent = ':root{' + t.css + '}';
+    var cl = document.documentElement.classList;
+    cl.toggle('ll-dark', !!t.dark); cl.toggle('ll-light', !t.dark); cl.toggle('ll-glass', !!t.glass);
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.type !== 'll-theme' || typeof d.css !== 'string') return;
+    llApplyTheme(d);
+    var frames = document.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) { try { frames[i].contentWindow.postMessage(d, '*'); } catch (e) {} }
+    try { if (ev.source) ev.source.postMessage({ type: 'll-theme-ack', nonce: d.nonce }, '*'); } catch (e) {}
+  });
 })();
 </script>
 </body>
