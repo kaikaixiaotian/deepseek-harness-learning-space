@@ -29,12 +29,13 @@ Every question sits in a `<fieldset class="question" data-qid="q1" data-kp="KP-2
 
 ## answers.json — the answer-submission contract
 
-Browsers cannot write to arbitrary disk paths from JS (security). So submission works in two redundant ways, both implemented by the submit button:
+Browsers cannot write to arbitrary disk paths from JS (security). Submission has a preferred in-space channel and standalone fallbacks, all implemented by the submit button:
 
-1. **Download** — JS builds a `Blob` from the answers and triggers a file download named `<quiz-slug>-answers.json` (e.g. `stage1-ch01-quiz-answers.json`). The user saves it into the quiz's directory (or anywhere — they tell the AI the path).
-2. **On-page display** — the same JSON is also rendered into a `<pre id="answerOutput">` block at the page bottom, so the user can copy-paste it into chat if download is awkward.
+1. **Learning-space bridge (preferred)** — when the quiz is opened inside the learning space (an iframe with no fetchable base URL), the submit JS sends the payload to the host via `postMessage({type:'ll-submit', id, quiz, answers})`. The learning space calls its host service, which writes `<quiz-slug>-answers.json` **next to the quiz html in the workspace** (name derived per naming.md, atomic write). The page shows a「已交卷」notice; the user just tells the AI「做好了」— the file is already where grading expects it. No download, no manual copy-back.
+2. **Download (standalone fallback)** — outside the learning space, JS builds a `Blob` and triggers a download named `<quiz-slug>-answers.json`. The user saves it into the quiz's directory (or anywhere — they tell the AI the path).
+3. **On-page display** — the same JSON is rendered into a `<pre id="answerOutput">` block at the page bottom, so the user can copy-paste it into chat if both channels above are awkward.
 
-The user then tells the AI "做好了" and either points to the downloaded file or pastes the JSON. The AI Reads the file (preferred) or parses the pasted JSON.
+The user then tells the AI "做好了". In-space, the answers file already sits next to the quiz — the AI simply Reads it (also when the user says nothing and the file exists). Standalone, the user points to the downloaded file or pastes the JSON.
 
 **answers.json schema:**
 ```json
@@ -126,7 +127,7 @@ The quiz HTML MUST contain a `<script id="quizKey" type="application/json">` tag
 
 ## Submit-button JS (must appear in every quiz HTML)
 
-This is the exact script pattern. It is the same `render()-from-state` philosophy as visualizations: the button handler collects the form state and serializes it. Put this inline at the end of `<body>`:
+This is the exact script pattern (identical to the quiz-form skeleton in `references/templates.md` — that skeleton is the copy source; keep the two in sync). It follows the same `render()-from-state` philosophy as visualizations: the button handler collects the form state and serializes it, preferring the learning-space `postMessage` bridge and falling back to a download. Put this inline at the end of `<body>`:
 
 ```html
 <script>
@@ -135,10 +136,32 @@ This is the exact script pattern. It is the same `render()-from-state` philosoph
   var form = document.getElementById('quizForm');
   var btn = document.getElementById('submitBtn');
   var out = document.getElementById('answerOutput');
+  var notice = document.getElementById('submitNotice');
+
+  /* learning-space bridge (ll-submit / ll-read) — see the answers.json section */
+  var inSpace = false;
+  try { inSpace = window.parent !== window; } catch (e) {}
+  var msgSeq = 0;
+  function bridgeSend(message, timeoutMs) {
+    return new Promise(function (resolve) {
+      var timer = null;
+      function onMsg(ev) {
+        if (ev.source !== window.parent || !ev.data || ev.data.id !== message.id) return;
+        window.removeEventListener('message', onMsg);
+        if (timer) clearTimeout(timer);
+        resolve(ev.data);
+      }
+      window.addEventListener('message', onMsg);
+      timer = setTimeout(function () {
+        window.removeEventListener('message', onMsg);
+        resolve(null);
+      }, timeoutMs || 4000);
+      window.parent.postMessage(message, '*');
+    });
+  }
 
   function collect() {
     var answers = {};
-    // radio + checkbox groups
     var names = {};
     Array.prototype.forEach.call(form.elements, function (el) {
       if (!el.name) return;
@@ -157,34 +180,47 @@ This is the exact script pattern. It is the same `render()-from-state` philosoph
     return answers;
   }
 
-  btn.addEventListener('click', function () {
-    var payload = {
-      quiz: document.body.getAttribute('data-quiz'),
-      submitted_at: new Date().toISOString(),
-      answers: collect()
-    };
-    var json = JSON.stringify(payload, null, 2);
-    // 1. on-page display
-    if (out) out.textContent = json;
-    // 2. download
+  function downloadFallback(json, slug) {
     var blob = new Blob([json], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = document.body.getAttribute('data-quiz') + '-answers.json';
+    a.download = slug + '-answers.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    // 3. also cache to localStorage so refresh can restore even if fetch is blocked
-    try { localStorage.setItem('ll-answers-' + payload.quiz, json); } catch (e) {}
+  }
+
+  btn.addEventListener('click', function () {
+    var slug = document.body.getAttribute('data-quiz');
+    var payload = { quiz: slug, submitted_at: new Date().toISOString(), answers: collect() };
+    var json = JSON.stringify(payload, null, 2);
+    if (out) { out.textContent = json; out.style.display = 'block'; }
+    try { localStorage.setItem('ll-answers-' + slug, json); } catch (e) {}
+    if (inSpace) {
+      btn.disabled = true;
+      bridgeSend({ type: 'll-submit', id: ++msgSeq, quiz: slug, answers: payload }).then(function (reply) {
+        btn.disabled = false;
+        if (reply && reply.ok) {
+          if (out) { out.style.display = 'none'; }
+          if (notice) { notice.textContent = '✓ 已交卷：答案已保存到学习空间工作区，回到聊天继续即可。'; notice.style.display = 'block'; }
+          return;
+        }
+        downloadFallback(json, slug);
+      });
+      return;
+    }
+    downloadFallback(json, slug);
   });
 
   // ---- restore-on-load: refill the form from the saved answers so refresh isn't blank ----
+  // ---- restore-on-load: refill the form from the saved answers so refresh isn't blank ----
   // Priority 0: inline <script id="restoreData"> tag (AI-injected at grading time — always works,
   //   a static part of the HTML that is loaded natively with the page, no fetch/CORS/network needed);
-  // Priority 1: fetch the sibling <quiz>-answers.json file (works if user placed it next to
-  //   the html AND the browser allows file:// fetch — Firefox yes, Chrome often blocks);
+  // Priority 1: in-space: bridge ll-read of the sibling answers file / standalone: fetch the
+  //   sibling <quiz>-answers.json (works if user placed it next to the html AND the browser
+  //   allows file:// fetch — Firefox yes, Chrome often blocks);
   // Priority 2: fall back to localStorage cache (written at submit time, always works per-origin).
   function applyAnswers(answers) {
     Object.keys(answers).forEach(function (qid) {
@@ -204,6 +240,12 @@ This is the exact script pattern. It is the same `render()-from-state` philosoph
       if (txt && typeof val === 'string') txt.value = val;
     });
   }
+  function restoreFromCache(slug) {
+    try {
+      var cached = localStorage.getItem('ll-answers-' + slug);
+      if (cached) { var d = JSON.parse(cached); if (d && d.answers) applyAnswers(d.answers); }
+    } catch (e) {}
+  }
 
   function restore() {
     // Priority 0: inline data script (AI-injected at grading time — always works, no fetch/CORS needed)
@@ -214,10 +256,27 @@ This is the exact script pattern. It is the same `render()-from-state` philosoph
         if (d && d.answers) { applyAnswers(d.answers); return; }
       } catch (e) {}
     }
-    // Priority 1: fetch sibling answers.json (placed by user next to the html)
     var slug = document.body.getAttribute('data-quiz');
-    var filename = slug + '-answers.json';
-    fetch('./' + filename)
+    if (inSpace) {
+      // Priority 1 in-space: the host bridge reads the sibling answers file
+      // (srcDoc has no fetchable base URL, fetch('./...') cannot work there)
+      bridgeSend({ type: 'll-read', id: ++msgSeq, path: './' + slug + '-answers.json' }).then(function (reply) {
+        if (reply && reply.ok && reply.content) {
+          try {
+            var data = JSON.parse(reply.content);
+            if (data && data.answers) {
+              applyAnswers(data.answers);
+              try { localStorage.setItem('ll-answers-' + slug, reply.content); } catch (e) {}
+              return;
+            }
+          } catch (e) {}
+        }
+        restoreFromCache(slug);
+      });
+      return;
+    }
+    // Priority 1 standalone: fetch sibling answers.json (placed by user next to the html)
+    fetch('./' + slug + '-answers.json')
       .then(function (r) { if (!r.ok) throw new Error('not found'); return r.json(); })
       .then(function (data) {
         if (data && data.answers) {
@@ -225,16 +284,7 @@ This is the exact script pattern. It is the same `render()-from-state` philosoph
           try { localStorage.setItem('ll-answers-' + slug, JSON.stringify(data)); } catch (e) {}
         }
       })
-      .catch(function () {
-        // fetch blocked or file missing — try localStorage cache
-        try {
-          var cached = localStorage.getItem('ll-answers-' + slug);
-          if (cached) {
-            var data = JSON.parse(cached);
-            if (data && data.answers) applyAnswers(data.answers);
-          }
-        } catch (e) {}
-      });
+      .catch(function () { restoreFromCache(slug); });
   }
   restore();
 })();
@@ -243,12 +293,13 @@ This is the exact script pattern. It is the same `render()-from-state` philosoph
 
 Non-negotiables (mirror `visualization.md`):
 - Vanilla JS, `'use strict'`, IIFE, all inline, no external deps.
-- `<form id="quizForm">` wraps every question; `<button id="submitBtn" type="button">提交答案</button>`; `<pre id="answerOutput">` exists at page bottom.
+- `<form id="quizForm">` wraps every question; `<button id="submitBtn" type="button">提交答案</button>`; `<pre id="answerOutput">` and `<div id="submitNotice">` exist at page bottom.
+- The **learning-space bridge helpers** (`inSpace` detection, `msgSeq`, `bridgeSend`) are mandatory parts of the canonical JS: submit prefers `ll-submit` (answers land in the workspace directly), restore prefers `ll-read`. Copy them verbatim from the skeleton.
 - `<script id="restoreData" type="application/json" style="display:none;"></script>` exists right before `<div id="gradingSummary">` — the AI fills this tag with the user's answers at grading time, so the restore-on-load JS can refill the form without any fetch/CORS.
 - `<script id="quizKey" type="application/json">` exists right after `restoreData` — **must be filled at quiz-generation time** (by the planner subagent) with the correct answers per the schema above. The AI reads this JSON when grading — never regex-parse the quiz HTML to find correct answers.
-- Chinese labels; question types visually grouped via `<fieldset>`.
+- Labels localized per the workspace locale; question types visually grouped via `<fieldset>`.
 - A reset button (`type="reset"`) inside the form.
-- **Restore-on-load (mandatory):** the JS MUST attempt to refill the form on page load, so a refresh isn't blank. Order: (1) `fetch('./<quiz>-answers.json')` — reads the sibling file if the user placed the downloaded json next to the html AND the browser allows file:// fetch (Firefox yes; Chrome often blocks CORS on file://); (2) fall back to `localStorage` cache (written at submit time); (3) if both fail, leave blank. The `applyAnswers(answers)` helper sets radio/checkbox/text/textarea from the answers object. This means: once the user moves the downloaded answers.json into the quiz's directory, refreshing the html shows their answers again — no manual re-entry. Copy the restore block verbatim from the skeleton above.
+- **Restore-on-load (mandatory):** the JS MUST attempt to refill the form on page load, so a refresh isn't blank. Order: (1) inline `restoreData` script; (2) in-space: bridge `ll-read` of the sibling answers file / standalone: `fetch('./<quiz>-answers.json')` (works when the user placed the downloaded json next to the html AND the browser allows file:// fetch — Firefox yes; Chrome often blocks CORS on file://); (3) `localStorage` cache (written at submit time); (4) if all fail, leave blank. The `applyAnswers(answers)` helper sets radio/checkbox/text/textarea from the answers object. Copy the restore block verbatim from the skeleton above.
 
 ## Grading write-back
 
@@ -305,7 +356,7 @@ Reuses the `visualization.md` static-check pattern, extended for forms. The main
 5. **Skeleton provenance (mandatory gate):** read-mode HTML contains `<!-- learning-loop skeleton: read-mode -->`; quiz HTML contains `<!-- learning-loop skeleton: quiz-form -->`. A missing signature means the file was built by copying an old sibling instead of the current `references/templates.md` — regenerate from the template before shipping.
 6. **Assertion coverage (quiz ↔ chapter pair):** every `data-assert` on a fieldset (and every `assert` in quizKey) resolves to an ID in the chapter doc's 断言清单 (`kp-asserts`). An unresolvable ID = 超纲 — rewrite the question before shipping, don't defer to grading time.
 7. **Formatting gate (read-mode, anti wall-of-text):** every ⑤边界条件 renders as a `<ul>` of discrete cases (grep — an el-body `<p>` containing inline enumeration like `a)` is a violation); ① definitions are split into per-claim list items; every concept's ② slot holds an embedded demo (`<figure class="viz">`) or an explicit reasoned waiver.
-8. **Contamination guard:** the HTML contains no `--vscode-` / `icube-theme-variables` strings — those indicate IDE/editor CSS was accidentally pasted into the file (a real incident added ~1900 junk style lines to a generated chapter). Strip or regenerate.
+8. **Contamination guard:** the HTML must not DEFINE any `--dsw-*` / `--dsh-*` custom properties — consuming them via `var(--dsw-alias-*, fallback)` is expected and required (theme bridge), but defining them would override the host theme. Also no `--vscode-` / `icube-theme-variables` strings — those indicate IDE/editor CSS was accidentally pasted into the file (a real incident added ~1900 junk style lines to a generated chapter). Strip or regenerate.
 
 A failing check → do NOT ship. Re-dispatch to fix, or **degrade to markdown** (see below).
 
@@ -320,6 +371,8 @@ Degradation is per-artifact, not all-or-nothing — a chapter doc can be HTML wh
 
 ## File locations after migration
 
+All paths below are en logical names — map to the workspace locale per `references/naming.md` (zh: `章节/`、`测验/`、`计划/总目录.html` …) before touching disk.
+
 ```
 <topic>-learning/
 ├── chapters/
@@ -328,7 +381,7 @@ Degradation is per-artifact, not all-or-nothing — a chapter doc can be HTML wh
 ├── quizzes/
 │   ├── baseline.html                  # quiz-form (was baseline-assessment.md)
 │   ├── stage1-ch01-quiz.html          # quiz-form (was .md)
-│   ├── stage1-ch01-quiz-answers.json  # user submission (downloaded)
+│   ├── stage1-ch01-quiz-answers.json  # user submission (in-space: auto-saved; standalone: downloaded)
 │   ├── stage1-ch01-quiz-grading.json  # AI grading record
 │   ├── stage1-ch01-plan-quiz.md       # UNCHANGED — still md receipt
 │   └── stage1-total-quiz.html         # quiz-form (was .md)

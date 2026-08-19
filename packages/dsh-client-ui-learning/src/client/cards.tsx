@@ -1,13 +1,14 @@
 /**
- * Turn-tail learning cards: after a turn produces chapter/quiz files,
- * render an 'open chapter' and/or 'open quiz' card. No match, no card.
+ * Turn-tail learning cards: after a turn produces learning files, render an
+ * 'open' card per produced kind (chapter / quiz / baseline / plan). No
+ * learning artifact in the turn, no card.
  */
 
 import type { CSSProperties } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { openLearningSpace } from './store.ts'
-import { selectProducedLearning, type LearningCardsSelection } from './classify.ts'
+import { selectProducedLearning, type LearningCardItem, type LearningCardKind, type LearningCardsSelection } from './classify.ts'
 import type { NS } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-runtime/client' {
@@ -18,7 +19,7 @@ declare module '@deepseek-ai/dsh-client-runtime/client' {
 
 /**
  * Turn-tail claim: classify the closing turn's produced files into
- * chapter/quiz cards. Returns null when neither kind exists (no card).
+ * per-kind open cards. Returns null when no learning artifact exists.
  */
 export function selectLearningCards(owner: TurnTailOwnerProps): LearningCardsSelection | null {
   const data = owner.turn.data.get('deliverables')
@@ -57,18 +58,27 @@ const openButtonStyle: CSSProperties = {
   padding: '4px 10px',
   cursor: 'pointer',
   fontSize: 12,
-  background: 'var(--dsw-alias-accent, #4d7cfe)',
+  background: 'var(--dsw-alias-brand-primary, #4d7cfe)',
   color: '#fff',
 }
 
 const externalStyle: CSSProperties = {
   border: 'none',
   background: 'none',
-  color: 'var(--dsw-alias-text-secondary, #9aa4b2)',
+  color: 'var(--dsw-alias-label-secondary, #9aa4b2)',
   cursor: 'pointer',
   fontSize: 11,
   textDecoration: 'underline',
   padding: 0,
+}
+
+type CardLabelKey = 'cardChapter' | 'cardQuiz' | 'cardBaseline' | 'cardPlan'
+
+const KIND_LABEL: Record<LearningCardKind, CardLabelKey> = {
+  chapter: 'cardChapter',
+  quiz: 'cardQuiz',
+  baseline: 'cardBaseline',
+  plan: 'cardPlan',
 }
 
 export function LearningCards(
@@ -77,28 +87,29 @@ export function LearningCards(
     & { openFile: (path: string) => void },
 ) {
   const { matched, t, openFile } = props
-  const rows = [
-    ...(matched.chapter === null ? [] : [{ label: t('cardChapter'), item: matched.chapter }]),
-    ...(matched.quiz === null ? [] : [{ label: t('cardQuiz'), item: matched.quiz }]),
-  ]
-  if (rows.length === 0) return null
+  const items: LearningCardItem[] = []
+  for (const key of ['chapter', 'quiz', 'baseline', 'plan'] as const) {
+    const item = matched[key]
+    if (item !== null) items.push(item)
+  }
+  if (items.length === 0) return null
   return (
     <div style={rootStyle}>
-      {rows.map(row => (
-        <div key={row.item.kind} style={cardStyle}>
-          <span>{row.label}</span>
-          <span title={row.item.path}>{row.item.title}</span>
+      {items.map(item => (
+        <div key={item.kind} style={cardStyle}>
+          <span>{t(KIND_LABEL[item.kind])}</span>
+          <span title={item.path}>{item.title}</span>
           <button
             type='button'
             style={openButtonStyle}
-            onClick={() => { openLearningSpace({ path: row.item.path, kind: row.item.kind }) }}
+            onClick={() => { openLearningSpace({ path: item.path, kind: item.kind }) }}
           >
             {t('cardOpen')}
           </button>
           <button
             type='button'
             style={externalStyle}
-            onClick={() => { openFile(row.item.path) }}
+            onClick={() => { openFile(item.path) }}
           >
             {t('cardExternal')}
           </button>

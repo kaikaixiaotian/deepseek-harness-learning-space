@@ -17,7 +17,7 @@ The markdown templates below (baseline-assessment.md, chapter doc, chapter-quiz,
 
 ## baseline-assessment.md
 
-Located at `00-baseline/baseline-assessment.md`. The user fills this in and uploads it.
+Located at `00-baseline/baseline.html` (zh: `00-基线测评/基线测评.html`) — the degradation fallback of the quiz-form baseline; the user fills this in and submits per the answers protocol.
 
 ```markdown
 # 基础测评 — <topic>
@@ -473,6 +473,7 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
 
 ```html
 <!DOCTYPE html>
+<!-- set <html lang> per the workspace locale: zh workspaces lang="zh-CN", en workspaces lang="en" -->
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -480,23 +481,36 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
 <title>阶段< N > · 章节< XX > — <title></title>
 <!-- learning-loop skeleton: read-mode -->
 <style>
-  /* ===== shared design system (same vars as quiz-form) ===== */
+  /* ===== shared design system (same vars as quiz-form) =====
+     Base colors CONSUME the dsh design tokens (--dsw-alias-*) with
+     standalone fallbacks: opened in a browser the fallbacks apply (dark via
+     prefers-color-scheme), opened inside the learning space the injected
+     ll-theme tokens win and the page follows the dsh host theme (and any
+     theme plugin). NEVER define --dsw-*/--dsh-* variables here — consume
+     them with fallbacks only (contamination guard). */
   :root{
-    --bg:#ffffff; --surface:#f7f8fa; --surface-2:#eef0f3;
-    --text:#1f2328; --muted:#57606a; --faint:#8b949e;
-    --accent:#4f46e5; --accent-soft:#eef2ff; --accent-border:#c7d2fe;
-    --border:#d9dde3; --hairline:#eceef1; --code-bg:#f6f8fa;
-    --obj-bg:#eef2ff;  --obj-bd:#4f46e5;
+    --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#f7f8fa); --surface-2:var(--dsw-alias-bg-layer-2,#eef0f3);
+    --text:var(--dsw-alias-label-primary,#1f2328); --muted:var(--dsw-alias-label-secondary,#57606a); --faint:var(--dsw-alias-label-tertiary,#8b949e);
+    --accent:var(--dsw-alias-brand-primary,#4f46e5); --accent-soft:var(--dsw-alias-interactive-bg-hover,#eef2ff); --accent-border:var(--dsw-alias-border-l2,#c7d2fe);
+    --border:var(--dsw-alias-border-l1,#d9dde3); --hairline:var(--dsw-alias-border-l2,#eceef1); --code-bg:var(--dsw-alias-markdown-code-block,#f6f8fa);
+    --ok:var(--dsw-alias-state-success,#1a7f37); --err:var(--dsw-alias-state-error,#cf222e); --warn:var(--dsw-alias-state-warn-primary,#9a6700);
+    --obj-bg:var(--dsw-alias-interactive-bg-hover,#eef2ff);  --obj-bd:var(--dsw-alias-brand-primary,#4f46e5);
     --kp-bg:#fffbeb;   --kp-bd:#fcd34d;  --kp-text:#92580a;
     --pit-bg:#fff7ed;  --pit-bd:#fb923c; --pit-text:#9a3412;
     --sum-bg:#f5f3ff;  --sum-bd:#a78bfa; --sum-text:#5b21b6;
     --r-sm:8px; --r:12px; --r-lg:16px;
-    --shadow-sm:0 1px 2px rgba(31,35,40,.06); --shadow:0 6px 20px rgba(31,35,40,.08);
+    --shadow-sm:var(--dsw-shadow-lv1,0 1px 2px rgba(31,35,40,.06)); --shadow:var(--dsw-shadow-lv2,0 6px 20px rgba(31,35,40,.08));
     --maxw:760px;
-    --font-sans:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
-    --font-mono:"SFMono-Regular",ui-monospace,"Cascadia Code",Consolas,monospace;
+    --font-sans:var(--dsw-font-family,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif);
+    --font-mono:var(--ds-font-family-code,"SFMono-Regular",ui-monospace,"Cascadia Code",Consolas,monospace);
   }
-  @media (prefers-color-scheme:dark){:root{
+  /* dark palette. Standalone (file://) dark = the media query with plain
+     values (no dsh tokens exist there); inside the learning space the host
+     theme class applies instead — ll-dark only re-tints the semantic
+     callouts because the base vars already resolve from the injected
+     tokens, and ll-light opts out of the OS media query. Media queries
+     cannot be OR-ed with class selectors, hence the duplication. */
+  @media (prefers-color-scheme:dark){html:not(.ll-light){
     --bg:#0d1117; --surface:#161b22; --surface-2:#21262d;
     --text:#e6edf3; --muted:#9198a1; --faint:#6e7681;
     --accent:#818cf8; --accent-soft:#1e1b4b; --accent-border:#4338ca;
@@ -506,6 +520,11 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
     --sum-bg:#2e1065; --sum-bd:#7c3aed; --sum-text:#ddd6fe;
     --shadow:0 6px 24px rgba(0,0,0,.5);
   }}
+  html.ll-dark{
+    --kp-bg:#3b2f10; --kp-bd:#a16207; --kp-text:#fde68a;
+    --pit-bg:#3b1d10; --pit-bd:#c2410c; --pit-text:#fed7aa;
+    --sum-bg:#2e1065; --sum-bd:#7c3aed; --sum-text:#ddd6fe;
+  }
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
   body{font-family:var(--font-sans); background:var(--bg); color:var(--text); line-height:1.75; margin:0; -webkit-font-smoothing:antialiased;}
@@ -585,6 +604,9 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
   figure.viz iframe{display:block; width:100%; height:460px; border:0; background:var(--bg);} /* 默认高度；页面脚本会按演示实际高度自适应，避免裁切 */
   figure.viz .viz-open{display:block; padding:8px 14px; font-size:.78rem; color:var(--muted); border-top:1px solid var(--hairline); text-decoration:none; background:var(--bg);}
   figure.viz .viz-open:hover{color:var(--accent);}
+  /* inside the learning space the link has no resolvable base URL (srcDoc)
+     and the demo is already inlined — hide it there, keep it standalone */
+  html.ll-dark .viz-open, html.ll-light .viz-open{display:none;}
 
   pre{background:var(--code-bg); border:1px solid var(--hairline); border-radius:var(--r-sm); padding:14px 16px; overflow-x:auto; margin:12px 0;}
   code{font-family:var(--font-mono); font-size:.88em;} pre code{font-size:.85rem;}
@@ -803,6 +825,7 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
 
 ```html
 <!DOCTYPE html>
+<!-- set <html lang> per the workspace locale: zh workspaces lang="zh-CN", en workspaces lang="en" -->
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -810,22 +833,31 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
 <title>章节测验 — 阶段< N >·章节< XX ></title>
 <!-- learning-loop skeleton: quiz-form -->
 <style>
-  /* ===== shared design system (same vars as read-mode chapter) ===== */
+  /* ===== shared design system (same vars as read-mode chapter) =====
+     Base colors CONSUME the dsh design tokens (--dsw-alias-*) with
+     standalone fallbacks — see the read-mode skeleton note. NEVER define
+     --dsw-*/--dsh-* variables here (contamination guard). */
   :root{
-    --bg:#ffffff; --surface:#f7f8fa; --surface-2:#eef0f3;
-    --text:#1f2328; --muted:#57606a; --faint:#8b949e;
-    --accent:#4f46e5; --accent-soft:#eef2ff; --accent-border:#c7d2fe;
-    --border:#d9dde3; --hairline:#eceef1; --code-bg:#161b22;
-    --r-sm:8px; --r:12px; --r-lg:16px; --shadow-sm:0 1px 2px rgba(31,35,40,.06);
-    --font-sans:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
-    --font-mono:"SFMono-Regular",ui-monospace,"Cascadia Code",Consolas,monospace;
+    --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#f7f8fa); --surface-2:var(--dsw-alias-bg-layer-2,#eef0f3);
+    --text:var(--dsw-alias-label-primary,#1f2328); --muted:var(--dsw-alias-label-secondary,#57606a); --faint:var(--dsw-alias-label-tertiary,#8b949e);
+    --accent:var(--dsw-alias-brand-primary,#4f46e5); --accent-soft:var(--dsw-alias-interactive-bg-hover,#eef2ff); --accent-border:var(--dsw-alias-border-l2,#c7d2fe);
+    --border:var(--dsw-alias-border-l1,#d9dde3); --hairline:var(--dsw-alias-border-l2,#eceef1); --code-bg:var(--dsw-alias-markdown-code-block,#161b22);
+    --ok:var(--dsw-alias-state-success,#1a7f37); --err:var(--dsw-alias-state-error,#cf222e); --warn:var(--dsw-alias-state-warn-primary,#9a6700);
+    --r-sm:8px; --r:12px; --r-lg:16px; --shadow-sm:var(--dsw-shadow-lv1,0 1px 2px rgba(31,35,40,.06));
+    --font-sans:var(--dsw-font-family,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif);
+    --font-mono:var(--ds-font-family-code,"SFMono-Regular",ui-monospace,"Cascadia Code",Consolas,monospace);
   }
-  @media (prefers-color-scheme:dark){:root{
+  /* dark: standalone file:// follows the OS; inside the learning space the
+     host marks <html> with ll-dark / ll-light (same gating as read-mode). */
+  @media (prefers-color-scheme:dark){html:not(.ll-light){
     --bg:#0d1117; --surface:#161b22; --surface-2:#21262d;
     --text:#e6edf3; --muted:#9198a1; --faint:#6e7681;
     --accent:#818cf8; --accent-soft:#1e1b4b; --accent-border:#4338ca;
     --border:#30363d; --hairline:#21262d; --code-bg:#0d1117;
   }}
+  html.ll-dark{
+    --kp-bg:#3b2f10; --kp-bd:#a16207; --kp-text:#fde68a;
+  }
   *{box-sizing:border-box;}
   body{font-family:var(--font-sans); background:var(--bg); color:var(--text); line-height:1.7; max-width:860px; margin:0 auto; padding:40px 24px 140px; -webkit-font-smoothing:antialiased;}
   h1{font-size:1.6rem; margin:0 0 16px; letter-spacing:-.01em; border-bottom:none; padding-bottom:0;}
@@ -854,17 +886,19 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
   /* 逐题批注位（每题 fieldset 内部，AI 批改后填充） — 机制与类名保持不变 */
   .feedback{margin-top:12px; padding:10px 14px; border-radius:var(--r-sm); font-size:.88rem; display:none;}
   .feedback.shown{display:block;}
-  .feedback.correct{background:#e8f5e9; border-left:4px solid #43a047;}
-  .feedback.wrong{background:#ffebee; border-left:4px solid #e53935;}
-  .feedback.partial{background:#fff8e1; border-left:4px solid #ffb300;}
-  .feedback.out-of-scope{background:#f3e5f5; border-left:4px solid #8e24aa;}
+  .feedback.correct{background:color-mix(in srgb,var(--ok) 12%,transparent); border-left:4px solid var(--ok);}
+  .feedback.wrong{background:color-mix(in srgb,var(--err) 12%,transparent); border-left:4px solid var(--err);}
+  .feedback.partial{background:color-mix(in srgb,var(--warn) 14%,transparent); border-left:4px solid var(--warn);}
+  .feedback.out-of-scope{background:color-mix(in srgb,var(--accent) 12%,transparent); border-left:4px solid var(--accent);}
   .feedback .verdict{font-weight:700;}
-  .feedback.correct .verdict{color:#2e7d32;}
-  .feedback.wrong .verdict{color:#c62828;}
-  .feedback.partial .verdict{color:#f57f17;}
-  .feedback.out-of-scope .verdict{color:#8e24aa;}
+  .feedback.correct .verdict{color:var(--ok);}
+  .feedback.wrong .verdict{color:var(--err);}
+  .feedback.partial .verdict{color:var(--warn);}
+  .feedback.out-of-scope .verdict{color:var(--accent);}
   /* 总分汇总条（批改后显示在提交按钮下方） */
   #gradingSummary{margin-top:20px; padding:16px 20px; border-radius:var(--r); background:var(--accent-soft); border:1px solid var(--accent-border); font-size:1.08rem; font-weight:700; color:var(--accent);}
+  /* 学习空间内交卷成功提示（standalone 场景保持隐藏） */
+  #submitNotice{margin-top:16px; padding:12px 16px; border-radius:var(--r); display:none; font-size:.95rem; font-weight:600; background:color-mix(in srgb,var(--ok) 14%,transparent); border:1px solid var(--ok); color:var(--ok);}
   .src-tag{font-size:.78rem; color:var(--accent);}
 </style>
 </head>
@@ -873,7 +907,7 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
 <h1>章节测验 — 阶段< N >·章节< XX > &lt;title&gt;</h1>
 <div class="info">
   通过线：与计划测验合并 ≥80%。每题标注考点 KP。<br>
-  <strong>作答方式</strong>：选择题点选项，问答/实战题在输入框作答。完成后点底部「提交答案」，会自动下载 <code>&lt;quiz&gt;-answers.json</code>，然后在聊天里告诉 AI「做好了」。
+  <strong>作答方式</strong>：选择题点选项，问答/实战题在输入框作答。完成后点底部「提交答案」——<strong>在学习空间中打开时会自动保存答案</strong>（回到聊天继续即可）；单独用浏览器打开时会下载 <code>&lt;quiz&gt;-answers.json</code>，把它放到测验文件旁边，然后在聊天里告诉 AI「做好了」。
 </div>
 
 <form id="quizForm" action="">
@@ -946,6 +980,7 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
 </form>
 
 <pre id="answerOutput" style="display:none;"></pre>
+<div id="submitNotice"></div>
 
 <!-- 总分汇总：批改后由 AI 填充（逐题批注已内联在各题的 .feedback 位） -->
 <script id="restoreData" type="application/json" style="display:none;"></script>
@@ -958,6 +993,33 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
   var form = document.getElementById('quizForm');
   var btn = document.getElementById('submitBtn');
   var out = document.getElementById('answerOutput');
+  var notice = document.getElementById('submitNotice');
+
+  /* ---- learning-space bridge: postMessage protocol (ll-submit / ll-read) ----
+     Inside the learning space the page runs as srcDoc (no fetchable base
+     URL), so submission and restore go through the host iframe bridge.
+     Standalone (double-clicked file) the bridge is absent and the classic
+     download / fetch flows apply. Copy this JS verbatim from the skeleton. */
+  var inSpace = false;
+  try { inSpace = window.parent !== window; } catch (e) {}
+  var msgSeq = 0;
+  function bridgeSend(message, timeoutMs) {
+    return new Promise(function (resolve) {
+      var timer = null;
+      function onMsg(ev) {
+        if (ev.source !== window.parent || !ev.data || ev.data.id !== message.id) return;
+        window.removeEventListener('message', onMsg);
+        if (timer) clearTimeout(timer);
+        resolve(ev.data);
+      }
+      window.addEventListener('message', onMsg);
+      timer = setTimeout(function () {
+        window.removeEventListener('message', onMsg);
+        resolve(null);
+      }, timeoutMs || 4000);
+      window.parent.postMessage(message, '*');
+    });
+  }
 
   function collect() {
     var answers = {};
@@ -978,24 +1040,44 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
     return answers;
   }
 
+  function downloadFallback(json, slug) {
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = slug + '-answers.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   btn.addEventListener('click', function () {
+    var slug = document.body.getAttribute('data-quiz');
     var payload = {
-      quiz: document.body.getAttribute('data-quiz'),
+      quiz: slug,
       submitted_at: new Date().toISOString(),
       answers: collect()
     };
     var json = JSON.stringify(payload, null, 2);
     if (out) { out.textContent = json; out.style.display = 'block'; }
-    var blob = new Blob([json], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = document.body.getAttribute('data-quiz') + '-answers.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
     try { localStorage.setItem('ll-answers-' + payload.quiz, json); } catch (e) {}
+    if (inSpace) {
+      btn.disabled = true;
+      btn.textContent = '提交中…';
+      bridgeSend({ type: 'll-submit', id: ++msgSeq, quiz: slug, answers: payload }).then(function (reply) {
+        btn.disabled = false;
+        btn.textContent = '提交答案';
+        if (reply && reply.ok) {
+          if (out) { out.style.display = 'none'; }
+          if (notice) { notice.textContent = '✓ 已交卷：答案已保存到学习空间工作区，回到聊天继续即可。'; notice.style.display = 'block'; }
+          return;
+        }
+        downloadFallback(json, slug);
+      });
+      return;
+    }
+    downloadFallback(json, slug);
   });
 
   // ---- restore-on-load: refill form so refresh isn't blank ----
@@ -1014,6 +1096,12 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
       if (txt && typeof val === 'string') txt.value = val;
     });
   }
+  function restoreFromCache(slug) {
+    try {
+      var cached = localStorage.getItem('ll-answers-' + slug);
+      if (cached) { var d = JSON.parse(cached); if (d && d.answers) applyAnswers(d.answers); }
+    } catch (e) {}
+  }
   function restore() {
     // Priority 0: inline data script (AI-injected at grading time — always works, no fetch/CORS needed)
     var dataEl = document.getElementById('restoreData');
@@ -1023,8 +1111,25 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
         if (d && d.answers) { applyAnswers(d.answers); return; }
       } catch (e) {}
     }
-    // Priority 1: fetch sibling answers.json (placed by user next to the html)
     var slug = document.body.getAttribute('data-quiz');
+    if (inSpace) {
+      // Priority 1 in-space: ask the host bridge to read the sibling answers file
+      bridgeSend({ type: 'll-read', id: ++msgSeq, path: './' + slug + '-answers.json' }).then(function (reply) {
+        if (reply && reply.ok && reply.content) {
+          try {
+            var data = JSON.parse(reply.content);
+            if (data && data.answers) {
+              applyAnswers(data.answers);
+              try { localStorage.setItem('ll-answers-' + slug, reply.content); } catch (e) {}
+              return;
+            }
+          } catch (e) {}
+        }
+        restoreFromCache(slug);
+      });
+      return;
+    }
+    // Priority 1 standalone: fetch sibling answers.json (placed by user next to the html)
     fetch('./' + slug + '-answers.json')
       .then(function (r) { if (!r.ok) throw new Error('nf'); return r.json(); })
       .then(function (data) {
@@ -1033,13 +1138,7 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
           try { localStorage.setItem('ll-answers-' + slug, JSON.stringify(data)); } catch (e) {}
         }
       })
-      .catch(function () {
-        // Priority 2: localStorage cache (submit-time backup)
-        try {
-          var cached = localStorage.getItem('ll-answers-' + slug);
-          if (cached) { var d = JSON.parse(cached); if (d && d.answers) applyAnswers(d.answers); }
-        } catch (e) {}
-      });
+      .catch(function () { restoreFromCache(slug); });
   }
   restore();
 })();
@@ -1049,9 +1148,10 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
 ```
 
 **Quiz-form non-negotiables:**
-- `<body data-quiz="<slug>">` carries the slug used in the download filename.
+- `<body data-quiz="<slug>">` carries the slug used in the answers filename.
 - Every question is a `<fieldset class="question" data-qid="qN" data-kp="..." data-assert="..." data-type="..." data-points="...">` — the AI reads these data-* attrs when grading (this replaces the inline `[考点: KP-x]` md tags). **`data-assert` carries the assertion IDs** (comma-separated when multiple, format `KP-2-A3`; prose displays it as `KP-2·A3`) — every listed assertion MUST exist in the chapter doc's 断言清单 (`kp-asserts`). A question whose assertion isn't listed there is 超纲 — rewrite it at generation time, don't wait for grading.
 - Radio/checkbox `name` MUST equal the qid (`q1`); text/textarea `id` MUST equal the qid (`q3`). The submit JS relies on this exact mapping.
-- `<form id="quizForm">`, `<button id="submitBtn" type="button">`, `<pre id="answerOutput">`, `<script id="restoreData" ...>`, `<script id="quizKey" ...>`, `<div id="gradingSummary">` all required. Every question's `<fieldset>` MUST contain a `<div class="feedback" id="fb-qN">` slot (empty initially).
-- The submit JS is the canonical version from `references/html-format.md` — copy verbatim, do not rewrite. It includes the **restore-on-load** logic: on page load, `fetch('./<quiz>-answers.json')` to refill the form (so refresh isn't blank once the user placed the downloaded json next to the html), falling back to a `localStorage` cache if fetch is CORS-blocked (Chrome on file://) or the file is absent. Both the submit handler (which writes localStorage) and the `restore()` call at the end are mandatory parts of the canonical JS.
+- `<form id="quizForm">`, `<button id="submitBtn" type="button">`, `<pre id="answerOutput">`, `<div id="submitNotice">`, `<script id="restoreData" ...>`, `<script id="quizKey" ...>`, `<div id="gradingSummary">` all required. Every question's `<fieldset>` MUST contain a `<div class="feedback" id="fb-qN">` slot (empty initially).
+- The submit JS is the canonical version above — copy verbatim, do not rewrite. It implements the **learning-space bridge** (`ll-submit` postMessage, answers saved straight into the workspace with a download fallback when standalone) and the **restore-on-load** chain: inline restoreData → bridge `ll-read` (in-space) / sibling `fetch` (standalone) → `localStorage` cache. The submit handler, the `restore()` call, and the bridge helpers are all mandatory parts of the canonical JS.
+- Set `<html lang>` per the workspace locale (`zh-CN` / `en`); the zh strings in this skeleton (提交答案 / 重置 / notices) are translated when generating en quizzes.
 - Stage-total-quiz uses the SAME skeleton; just add more questions (≥2 per type, ≥2 综合) and `[出处: url]` spans inside the qmeta div for web-research citations.

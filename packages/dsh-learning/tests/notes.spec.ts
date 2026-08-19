@@ -75,6 +75,25 @@ describe('readNote / writeNote lifecycle', () => {
     await expect(service.writeNote('s1', zhWorkspace, 'stage1-ch01', '中文笔记')).resolves.toEqual({ saved: true })
     await expect(readFile(join(zhWorkspace, '笔记', 'stage1-ch01-笔记.html'), 'utf8')).resolves.toBe('中文笔记')
   })
+
+  it('keeps the default branch file name unchanged and isolates named branches', async () => {
+    await expect(service.writeNote('s1', workspace, 'stage1-ch02', 'default body')).resolves.toEqual({ saved: true })
+    await expect(service.writeNote('s1', workspace, 'stage1-ch02', 'ideas body', 'ideas')).resolves.toEqual({ saved: true })
+    await expect(service.writeNote('s1', workspace, 'stage1-ch02', '错题 body', '错题本')).resolves.toEqual({ saved: true })
+    await expect(service.readNote('s1', workspace, 'stage1-ch02')).resolves.toEqual({ content: 'default body' })
+    await expect(service.readNote('s1', workspace, 'stage1-ch02', 'ideas')).resolves.toEqual({ content: 'ideas body' })
+    await expect(service.readNote('s1', workspace, 'stage1-ch02', '错题本')).resolves.toEqual({ content: '错题 body' })
+    await expect(service.readNote('s1', workspace, 'stage1-ch02', 'missing')).resolves.toEqual({ content: '' })
+    const names = await readdir(join(workspace, 'notes'))
+    expect(names).toContain('stage1-ch02-note.html')
+    expect(names).toContain('stage1-ch02-ideas-note.html')
+    expect(names).toContain('stage1-ch02-错题本-note.html')
+  })
+
+  it('rejects unsafe note branches', async () => {
+    await expect(service.writeNote('s1', workspace, 'stage1-ch02', 'x', '../escape')).rejects.toThrow('invalid note branch')
+    await expect(service.writeNote('s1', workspace, 'stage1-ch02', 'x', 'a b')).rejects.toThrow('invalid note branch')
+  })
 })
 
 describe('notes safety', () => {
@@ -106,6 +125,36 @@ describe('notes safety', () => {
 
   it('rejects readFile escapes via ..', async () => {
     await expect(service.readFile('s1', workspace, '../outside')).rejects.toThrow('outside the learning workspace')
+  })
+})
+
+describe('saveQuizAnswers', () => {
+  it('saves quiz answers next to the quiz html with the localized marker', async () => {
+    const quizzes = join(workspace, 'quizzes')
+    await mkdir(quizzes, { recursive: true })
+    await writeFile(join(quizzes, 'stage1-ch01-quiz.html'), '<p>quiz</p>', 'utf8')
+    const result = await service.saveQuizAnswers('s1', workspace, 'quizzes/stage1-ch01-quiz.html', '{"answers":{}}')
+    expect(result.saved).toBe(true)
+    await expect(readFile(result.answersPath, 'utf8')).resolves.toBe('{"answers":{}}')
+    expect(result.answersPath.endsWith('stage1-ch01-quiz-answers.json')).toBe(true)
+  })
+  it('saves baseline answers into the baseline dir (zh naming)', async () => {
+    const zhWorkspace = join(area, 'react2-学习')
+    await mkdir(zhWorkspace)
+    await writeFile(join(zhWorkspace, 'meta.json'), JSON.stringify({ locale: 'zh' }), 'utf8')
+    const baseline = join(zhWorkspace, '00-基线测评')
+    await mkdir(baseline, { recursive: true })
+    await writeFile(join(baseline, '基线测评.html'), '<p>baseline</p>', 'utf8')
+    const result = await service.saveQuizAnswers('s1', zhWorkspace, '00-基线测评/基线测评.html', '{}')
+    expect(result.answersPath.endsWith('基线测评-答案.json')).toBe(true)
+  })
+  it('rejects paths outside the allowed dirs and unsafe stems', async () => {
+    await expect(service.saveQuizAnswers('s1', workspace, 'chapters/stage1-ch01.html', '{}'))
+      .rejects.toThrow('not a quiz or baseline file')
+    await expect(service.saveQuizAnswers('s1', workspace, 'quizzes/../../escape.html', '{}'))
+      .rejects.toThrow()
+    await expect(service.saveQuizAnswers('s1', workspace, 'quizzes/bad..name.html', '{}'))
+      .rejects.toThrow('not a quiz or baseline file')
   })
 })
 

@@ -40,6 +40,10 @@ export default defineConfig([
     dts: false,
     clean: false,
     sourcemap: true,
+    // Minified is safe here: unlike the host half there is no Typert wire
+    // contract (postMessage field names are object literals, never mangled),
+    // and the inlined editor would otherwise triple the payload.
+    minify: true,
     external: [...CLIENT_EXTERNALS],
     noExternal: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
     define: {

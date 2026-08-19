@@ -3,7 +3,7 @@
  * full-screen overlay. A tiny module-level store (no framework deps).
  */
 
-export type LearningFocusKind = 'chapter' | 'quiz'
+export type LearningFocusKind = 'chapter' | 'quiz' | 'baseline' | 'plan'
 
 export interface LearningFocus {
   readonly path: string

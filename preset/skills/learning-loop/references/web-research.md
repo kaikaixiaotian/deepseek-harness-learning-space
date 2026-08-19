@@ -2,7 +2,7 @@
 
 The learning-loop skill augments its generated content with **real data from authoritative web sources**. This file defines *where* to fetch from, *how* to verify authenticity, and *what to do when the network is unavailable*. Read this before any web-research subagent dispatch, and before generating any stage-total quiz.
 
-> **DSH dispatch note**: dispatch this research as a `subagent` whose prompt instructs it to use the DSH `web_search` tool (and the web tool's `fetch` to read page bodies from whitelist URLs). The subagent inherits the session's tools. Everything else in this file — whitelist, three gates, degradation, citation format — is unchanged.
+> **DSH dispatch note**: dispatch this research as a `subagent` whose prompt instructs it to use the DSH `web_search` tool (and `web_fetch` to read page bodies from whitelist URLs). The subagent inherits the session's tools. Everything else in this file — whitelist, three gates, degradation, citation format — is unchanged.
 
 ## Why web data at all
 

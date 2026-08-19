@@ -31,6 +31,7 @@ dsh plugin --profile web add <dsh-learning 绝对路径>
 
 ## Known Limitations
 
-- 测验表单在 iframe 内提交仍走浏览器下载 answers.json（技能既有上传流程不变）；内嵌回传属于「模板重构」任务。
+- 浏览器单独打开测验（不在学习空间内）仍走下载 answers.json 的旧流程；学习空间内提交则直写工作区。
+- 生成的 HTML 单独用浏览器打开时不跟随 dsh 主题（模板带 OS 级浅深色回退），且章节内嵌演示不会自动加载（内联是学习空间专属能力）。
 - 笔记为最后写入者胜出（多标签页同章笔记不锁写）。
-- 富文本 v1 用 execCommand（浏览器仍支持，标记为 deprecated），后续可换 TipTap。
+- 富文本编辑器为 TipTap（内联打包，client bundle 约 419KB / gzip 132KB）；多笔记分支按「主笔记 + 命名分支」平铺于笔记目录。

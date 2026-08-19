@@ -2,7 +2,7 @@
 
 The master plan (总目录) is the single most important artifact in the loop — every chapter flows from it. Generating it from AI memory alone produces plans that miss canonical topics, order concepts against the field's real learning curve, or invent a structure no practitioner would recognize. This file defines how to **pull a real learning path from authoritative sources first**, then let AI adapt it to the user's baseline. Read this before any master-plan generation (initial or new-stage).
 
-> **DSH dispatch note**: dispatch this research as a `subagent` whose prompt instructs it to use the DSH `web_search` tool (and the web tool's `fetch` to read page bodies from whitelist URLs). The subagent inherits the session's tools and writes the per-chapter material cards itself.
+> **DSH dispatch note**: dispatch this research as a `subagent` whose prompt instructs it to use the DSH `web_search` tool (and `web_fetch` to read page bodies from whitelist URLs). The subagent inherits the session's tools and writes the per-chapter material cards itself.
 
 This is distinct from `references/web-research.md`: that file is about grounding *quiz questions* in facts (per-stage-total). This file is about grounding the *curriculum structure itself* (the whole stage/chapter roadmap) in how the field is actually taught.
 

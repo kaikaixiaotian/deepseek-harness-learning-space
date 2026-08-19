@@ -4,12 +4,14 @@
 
 ## Step 1 — Update the skill itself (mandatory, comes first)
 
+The preset directory is **install-managed** (the repository's `install.ps1` copies the preset into place and registers the plugin packages). The supported update path is the installer, not in-place git operations:
+
 1. Locate the install dir: the preset directory `$DSH_HOME/.agent-presets/learning/` (Windows: `C:\Users\<user>\.dsh\.agent-presets\learning\`); the skill lives in its `skills/learning-loop/` subdirectory. If it doesn't exist, tell the user and stop.
-2. Record `旧版本`: the git tag or latest commit of the preset repository, e.g. `git -C "<presetDir>" describe --tags` (fallback: `git -C "<presetDir>" rev-parse --short HEAD`).
-3. If `<presetDir>/.git` exists (git-clone install): run `git pull --ff-only` in `<presetDir>` (remote: the plugin's GitHub repository). **If the pull fails (local edits / diverged history), do NOT force, reset, or overwrite. Report the git error verbatim and STOP — do not continue to step 2.**
-4. If `<presetDir>/.git` does not exist (old copy-style install): back up `<presetDir>` to `<presetDir>.bak.<timestamp>`, then `git clone <repo-url> "<presetDir>"`. Set `旧版本 = "(copy install)"`.
+2. Record `旧版本`: read `preset.yml`/skill frontmatter or any local version marker if present (fallback: `"(unknown)"`).
+3. **Tell the user to run the installer themselves**: re-run `install.ps1` from the dsh-learning-space repository clone (or the one-line download command in its README), then **restart dsh web**. It refreshes the preset directory with a clean copy and re-registers the plugins. Do NOT run `git pull` inside the preset dir and do NOT edit its files — it is a managed copy.
+4. If the installer is genuinely unavailable (no repository access), the manual fallback is: back up `<presetDir>` to `<presetDir>.bak.<timestamp>`, then copy a fresh `preset/` tree from a repository clone over it. Set `旧版本 = "(manual copy)"`.
 5. The `/learning-loop` command is auto-derived from the skill by DSH (user-invocable skills are exposed as `/name`), so there is **no separate command file to sync**.
-6. Record `新版本` (the updated git tag/commit). This is the value step 2 stamps into workspaces.
+6. After the user confirms the update (or the fallback finished), record `新版本` from the new files. This is the value step 2 stamps into workspaces.
 
 ## Step 2 — Migrate workspaces (mark them, don't patch them)
 

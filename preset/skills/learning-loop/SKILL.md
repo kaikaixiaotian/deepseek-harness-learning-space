@@ -1,6 +1,6 @@
 ---
 name: learning-loop
-description: Guide a user through AI-assisted mastery of any skill or domain via a structured, self-paced closed-loop learning system. Use whenever the user wants to learn, study, be taught, or get trained on a topic — including phrases like "教我学习 X"、"我想学 X"、"帮我掌握 X"、"学习计划"、"训练我"、"带我学"、"tutor me on X"、"I want to learn X". Triggers on first run (initializes a plan) AND on every subsequent run (auto-resumes from saved progress). Also use when the user submits a quiz (answers.json downloaded from an HTML quiz form) and expects grading + next steps. Also use when the user asks to upgrade or update the learning-loop skill itself — "/learning-loop upgrade" or 升级/更新 learning-loop.
+description: Guide a user through AI-assisted mastery of any skill or domain via a structured, self-paced closed-loop learning system. Use whenever the user wants to learn, study, be taught, or get trained on a topic — including phrases like "教我学习 X"、"我想学 X"、"帮我掌握 X"、"学习计划"、"训练我"、"带我学"、"tutor me on X"、"I want to learn X". Triggers on first run (initializes a plan) AND on every subsequent run (auto-resumes from saved progress). Also use when the user submits a quiz (via the learning space or an answers.json file) and expects grading + next steps. Also use when the user asks to upgrade or update the learning-loop skill itself — "/learning-loop upgrade" or 升级/更新 learning-loop.
 whenToUse: 当用户想学习、研究、被教授或被训练某个主题（"我想学 X"、"教我 X"、学习计划等），或提交测验答案期待批改，或请求升级该技能时使用。
 ---
 
@@ -8,9 +8,13 @@ whenToUse: 当用户想学习、研究、被教授或被训练某个主题（"�
 
 You run a **closed-loop learning system**: the AI teaches, the user proves mastery, the AI adapts. Every chapter ends in a measurable pass/fail gate, and failure rebuilds the material rather than moving on. This is the discipline that makes the loop actually teach instead of just generate content.
 
+## Locale rule (read before touching ANY path)
+
+**Every path in this document is an en logical name.** The workspace's `meta.json.locale` (set at init from the user's language) decides the REAL on-disk names via `references/naming.md` (e.g. `chapters/` → `章节/`, `quizzes/stage1-ch01-quiz.html` → `测验/阶段1-章01-测验.html`). Before every read / write / glob / dispatch, derive the real path for the workspace's locale — never write an English literal path into a zh workspace (or vice versa). Constants that never localize: `meta.json`, ASCII topic slugs, `_vN` / `stageN` / `chXX` / `KP-n-An` / `qN` tokens, digits.
+
 ## Read these references on demand
 
-- `references/naming.md` — the locale-aware directory/file naming table (en/zh). Read before generating ANY file, so every path matches the workspace's `meta.json.locale`. `meta.json` is always `meta.json`; topic slugs stay ASCII.
+- `references/naming.md` — the locale-aware directory/file naming table (en/zh). **Mandatory before generating or reading ANY file**: map each en logical name in this document to the workspace-locale real name. `meta.json` is always `meta.json`; topic slugs stay ASCII.
 - `references/templates.md` — content structure for every file the system produces (baseline, plan, chapter, quizzes, wiki) + the HTML skeletons (read-mode + quiz-form). Chapter docs follow spec 2.0: assertion inventory (考点断言), six elements with ② 直观演示 (embedded interactive demo), per-concept checkpoints, anti-wall-of-text formatting rules. Read before generating any user-facing file. Markdown templates within are the degradation fallback; default output is HTML per `references/html-format.md`.
 - `references/quiz-types.md` — the six required question types and the difficulty ladder. Read before generating any quiz so the question mix is correct.
 - `references/grading.md` — per-type rubrics, combined-score weights, and the failure-loop cap. Read before grading any quiz or running a rebuild.
@@ -20,16 +24,16 @@ You run a **closed-loop learning system**: the AI teaches, the user proves maste
 - `references/visualization.md` — demos are the primary intuition vehicle (analogies are banned): default-on per-KP rule with narrow waivers, the "真正的演示" quality bar (mechanism itself, boundary-case branch coverage, user-operable), and the JS static-verification flow. Read before any chapter generation.
 - `references/curriculum-research.md` — how to pull a canonical learning path from authoritative sources and adapt it to the user's baseline, instead of inventing the plan from AI memory. Read before any master-plan or new-stage generation.
 - `references/html-format.md` — all user-facing files are HTML (read-mode + quiz-form), the answers.json submission mechanism, and JS verification. Read before generating any chapter doc, master plan, or quiz.
-- `references/upgrade.md` — the full upgrade protocol: **update the skill itself from GitHub first** (`git pull --ff-only` in the preset install dir), then mark existing workspaces so subsequent generation follows the current spec (existing files left untouched). Read when the user runs `/learning-loop upgrade` or asks to 升级/更新 the learning-loop skill.
+- `references/upgrade.md` — the full upgrade protocol: **update the skill itself first** (tell the user to re-run the repository installer — the preset dir is a managed copy, never git-pull it by hand), then mark existing workspaces so subsequent generation follows the current spec (existing files left untouched). Read when the user runs `/learning-loop upgrade` or asks to 升级/更新 the learning-loop skill.
 
 ## The loop at a glance
 
 ```
-[init] describe topic → ask baseline questions → user fills baseline.html form → submits answers.json → upload
+[init] describe topic → ask baseline questions → user fills baseline.html form → submits (in-space: auto-saved / standalone: answers.json handoff)
    ↓
 [plan] build master plan (stages auto-tiered) + stage-1 chapters + chapter-1 doc + chapter-1 quiz
    ↓
-[learn] user studies chapter doc (.html) → fills chapter-quiz.html form → submits answers.json → uploads
+[learn] user studies chapter doc (.html) → fills chapter-quiz.html form → submits (same two channels)
    ↓
 [plan-quiz] ask ADDITIONAL questions not in the chapter quiz (verifies transfer)
    ↓
@@ -66,7 +70,7 @@ DSH auto-derives the `/learning-loop` slash command from this skill (user-invoca
 
 When the user's message is about upgrading **the skill itself** — `learning-loop upgrade`, `/learning-loop upgrade`, 升级/更新 learning-loop — do NOT route through First-run/resume and do NOT treat it as a workspace-only migration. This is a maintenance request; without pulling the latest skill files first, the "current spec" isn't actually installed. Read `references/upgrade.md` and follow it end-to-end:
 
-1. **Update the skill itself** (mandatory, first): `git pull --ff-only` in the preset install dir `$DSH_HOME/.agent-presets/learning/` (the skill lives in its `skills/learning-loop/` subdirectory; re-clone if it's not a git install; on pull failure report the error and stop — never force). The `/learning-loop` command is auto-derived from the skill, so there is no separate command file to sync.
+1. **Update the skill itself** (mandatory, first): the preset is install-managed, not a git checkout you own — tell the user to **re-run the installer** (`install.ps1` from the dsh-learning-space repository; it refreshes the preset directory and re-registers the plugin packages), then **restart dsh web and start a new session** so the new skill loads. Do NOT run `git pull` inside `$DSH_HOME/.agent-presets/learning/` yourself — that directory is a managed copy, and the installer is the only supported update path (re-cloning by hand is the fallback when the installer is unavailable). After the user confirms the update, continue with migration.
 2. **Migrate workspaces**: stamp each workspace `meta.json` (any localized name) with `schema_version` (the new skill version) + `upgraded_at` + a history event. Existing files are never touched.
 3. **Report** old → new version, workspaces migrated, and remind the user to start a fresh session to load the updated skill.
 
@@ -74,32 +78,32 @@ Do not enter the learning loop during upgrade; the user runs `/learning-loop` se
 
 ## Directory layout
 
-Create one workspace per learning topic, in a subfolder of the current working directory, named `<topic-slug>-<suffix>/` where `<suffix>` is the localized workspace suffix from `references/naming.md` (`-learning` in English, `-学习` in Chinese; e.g. `machine-learning-learning/` or `react-学习/`). The topic slug stays ASCII. **Every directory and file name below is localized per `references/naming.md`**; the tree shows the English form and the Chinese form comes from the same table (e.g. `00-baseline` → `00-基线测评`, `plan` → `计划`, `chapters` → `章节`, `quizzes` → `测验`, `wiki` → `知识库`, `viz` → `演示`, `master-plan.html` → `总目录.html`). `meta.json` is always `meta.json`. This keeps learning material scoped to the project, not the user's home dir.
+Create one workspace per learning topic, in a subfolder of the current working directory, named `<topic-slug>-<suffix>/` where `<suffix>` is the localized workspace suffix from `references/naming.md` (`-learning` in English, `-学习` in Chinese; e.g. `machine-learning-learning/` or `react-学习/`). The topic slug stays ASCII. **Every directory and file name below is localized per `references/naming.md` — see the Locale rule at the top.** `meta.json` is always `meta.json`. This keeps learning material scoped to the project, not the user's home dir.
 
 ```
-<topic>-learning/
-├── meta.json                       # state machine — the single source of truth
-├── 00-baseline/
-│   └── baseline.html               # quiz-form: AI-authored questions, user fills via form
-├── plan/
-│   ├── master-plan.html            # 总目录: all stages + chapters (read-mode)
-│   ├── master-plan-grading.json    # (after baseline) AI's adapted-plan record
-│   └── sources/stageN-chXX.md      # per-chapter material cards (internal AI use, md)
-├── chapters/
-│   ├── stage1-ch01-<slug>.html     # chapter doc (read-mode); rebuilt versions get _v2, _v3
-│   └── viz/stage1-ch01-<kp>.html   # interactive visualizations (unchanged)
-├── quizzes/
-│   ├── baseline.html               # = 00-baseline/baseline.html (symlink or copy)
-│   ├── stage1-ch01-quiz.html       # chapter quiz (quiz-form)
-│   ├── stage1-ch01-quiz-answers.json     # user submission (downloaded from the form)
-│   ├── stage1-ch01-quiz-grading.json     # AI grading record
-│   ├── stage1-ch01-plan-quiz.md    # transfer check receipt (STILL md — live chat, AI writes post-hoc)
-│   └── stage1-total-quiz.html      # stage-level comprehensive quiz (quiz-form)
-├── wiki/
-│   ├── progress.md                 # master progress log (internal AI use, md)
-│   └── stage1-ch01-wiki.md         # per-chapter learning record (internal AI use, md)
-├── notes/
-│   └── stage1-ch01-<slug>-note.html  # per-chapter rich-text notes — owned by the learning-space UI, never written by the AI
+<topic>-learning/                          # zh: <topic>-学习/
+├── meta.json                              # state machine — the single source of truth (never localized)
+├── 00-baseline/                           # zh: 00-基线测评/
+│   └── baseline.html                      # zh: 基线测评.html — quiz-form: AI-authored questions, user fills via form
+├── plan/                                  # zh: 计划/
+│   ├── master-plan.html                   # zh: 总目录.html — all stages + chapters (read-mode)
+│   ├── master-plan-grading.json           # zh: 总目录-批改.json — (after baseline) AI's adapted-plan record
+│   └── sources/stageN-chXX.md             # zh: 资料/ — per-chapter material cards (internal AI use, md)
+├── chapters/                              # zh: 章节/
+│   ├── stage1-ch01-<slug>.html            # zh: 阶段1-章01-<slug>.html — chapter doc (read-mode); rebuilds get _v2, _v3
+│   └── viz/stage1-ch01-<kp>.html          # zh: 演示/ — interactive visualizations (unchanged)
+├── quizzes/                               # zh: 测验/
+│   ├── baseline.html                      # zh: 基线测评.html — copy of 00-baseline/baseline.html (use a copy; symlinks need elevated rights on Windows)
+│   ├── stage1-ch01-quiz.html              # zh: 阶段1-章01-测验.html — chapter quiz (quiz-form)
+│   ├── stage1-ch01-quiz-answers.json      # zh: 阶段1-章01-测验-答案.json — user submission (in-space: auto-saved; standalone: downloaded from the form)
+│   ├── stage1-ch01-quiz-grading.json      # zh: 阶段1-章01-测验-批改.json — AI grading record
+│   ├── stage1-ch01-plan-quiz.md           # zh: 阶段1-章01-计划测验.md — transfer check receipt (STILL md — live chat, AI writes post-hoc)
+│   └── stage1-total-quiz.html             # zh: 阶段1-总测验.html — stage-level comprehensive quiz (quiz-form)
+├── wiki/                                  # zh: 知识库/
+│   ├── progress.md                        # zh: 进度.md — master progress log (internal AI use, md)
+│   └── stage1-ch01-wiki.md                # zh: 阶段1-章01-知识.md — per-chapter learning record (internal AI use, md)
+└── notes/                                 # zh: 笔记/ — owned by the learning-space UI, never written by the AI
+    └── stage1-ch01-<slug>-note.html       # per-chapter rich-text notes (UI naming: ASCII chapterKey + optional branch)
 ```
 
 **User-facing files are HTML** (chapter docs, master plan, all three quizzes) — see `references/html-format.md`. **Internal AI-only files stay markdown/json** (meta.json, wiki, plan/sources, plan-quiz receipt). The plan-quiz is the ONE exception to HTML — it stays live-chat + md receipt (user explicitly requested it unchanged).
@@ -141,28 +145,30 @@ This file is the contract between invocations. Update it after every state trans
 
 ## How "submit a quiz" works in practice
 
-Quizzes are now **HTML forms**, not markdown the user edits. The flow (see `references/html-format.md` for the full mechanism):
+Quizzes are **HTML forms**, not markdown the user edits. There are two submission channels, and which one applies depends on where the user opens the quiz (see `references/html-format.md` for the full mechanism):
 
-1. You generate `<quiz>.html` (quiz-form skeleton) and tell the user the file path to open in a browser.
+1. You generate `<quiz>.html` (quiz-form skeleton, canonical submit JS included verbatim) and tell the user the file path — **prefer the learning space**: the turn that produced the quiz shows an「打开测验」card in the chat; clicking it opens the quiz inside the learning space.
 2. The user answers in the form — clicking radio/checkbox options for 选择题, typing into textareas for 实战/模拟/算法/综合题 — then clicks the **提交答案** button at the bottom.
-3. The submit JS serializes all answers into `<quiz>-answers.json` and **auto-downloads** it (and also displays the JSON on-page as a fallback the user can copy-paste).
-4. The user tells you in chat "做好了" / "提交". **You do NOT know where the browser saved the json** — browsers download to a default folder (usually ~/Downloads), not the workspace. So ask: "请把下载的 `<slug>-answers.json` 放到测验 html 的同目录（或告诉我它的完整路径）". Placing it next to the html has a double benefit: (a) you can Read it at the predictable path `<quiz-dir>/<slug>-answers.json`; (b) **the quiz html will auto-refill the form from that sibling json on refresh** (restore-on-load — see step 7), so the user doesn't lose their answers on page reload. Two accepted handoff modes:
-   - **(preferred) file:** the user moves/saves the json next to the html (or gives you an absolute path) → you Read that exact path.
-   - **(fallback) paste:** the user copies the on-page JSON (from `<pre id="answerOutput">`) and pastes it into chat → you parse the pasted text as JSON.
-5. You **Read the answers.json at the user-given path** (or `JSON.parse` the pasted text) — this is a clean structured object (`{quiz, submitted_at, answers: {q1: "B", q2: ["A","C"], q3: "text..."}}`), far more reliable than parsing filled markdown. Grade per `references/grading.md`. **If Read fails (file not found / download incomplete), do NOT grade — tell the user "没找到文件，请确认下载已完成并告诉我完整路径（或直接把页面底部的 JSON 粘贴给我）" and wait.** Retry on their next message.
-6. If answers.json is missing question keys, has `null` values, OR has empty-string `""` values (treat all three as unanswered), tell the user which questions are unanswered and wait — don't grade an incomplete submission.
-7. **Restore-on-load (built into the quiz html):** the quiz form's JS attempts `fetch('./<slug>-answers.json')` on page load and refills the form (radio/checkbox/text/textarea) from it, so a refresh isn't blank once the json sits next to the html. If the browser blocks file:// fetch (Chrome often does) or the file isn't there, it falls back to a `localStorage` cache written at submit time. **Tell the user this when you hand over the quiz**: "作答提交后，把下载的 json 放到这个 html 同目录，下次刷新页面会自动恢复你的答案（Chrome 若不自动恢复，可粘贴页面底部的 JSON）". You don't implement this — it's already in the canonical submit JS (`references/html-format.md`); just ensure the generated quiz uses that JS verbatim.
+3. **In-space (preferred channel):** the submit JS sends the payload to the learning-space bridge (`ll-submit` postMessage), which **writes `<quiz>-answers.json next to the quiz html in the workspace automatically** (localized name per naming.md). The page shows a「已交卷」notice. Nothing is downloaded; nothing needs to be moved.
+4. **Standalone (browser double-click):** the JS downloads `<quiz>-answers.json` and also displays the JSON on-page (`<pre id="answerOutput">`) as a copy-paste fallback.
+5. The user tells you in chat "做好了" / "提交". **Where to find the answers:**
+   - **In-space submission → the answers file is already at the predictable sibling path** `<quiz-dir>/<slug>-answers.json` (localized). Read it there directly — do not ask the user for a path. If it's absent (they actually used a browser), fall through to the standalone handling.
+   - **Standalone → you do NOT know where the browser saved the json.** Ask: "请把下载的 `<slug>-answers.json` 放到测验 html 的同目录（或告诉我它的完整路径）". Accepted handoff modes: (preferred) the user moves/saves the json next to the html or gives an absolute path → you Read that exact path; (fallback) the user pastes the on-page JSON into chat → read the pasted text carefully as JSON (check bracket/quote/comma balance — do not assume it parses).
+6. **Read the answers.json** — it's a clean structured object (`{quiz, submitted_at, answers: {q1: "B", q2: ["A","C"], q3: "text..."}}`), far more reliable than parsing filled markdown. Grade per `references/grading.md`. **If Read fails (file not found / download incomplete), do NOT grade — tell the user "没找到答案文件：如果是在学习空间里做的，直接告诉我重试；如果是浏览器下载的，请确认下载已完成并告诉我完整路径（或粘贴页面底部的 JSON）" and wait.** Retry on their next message.
+7. If answers.json is missing question keys, has `null` values, OR has empty-string `""` values (treat all three as unanswered), tell the user which questions are unanswered and wait — don't grade an incomplete submission.
+8. **Restore-on-load (built into the quiz html):** the canonical JS refills the form on refresh — inline `restoreData` first, then the bridge read (in-space) or sibling `fetch` (standalone), then the `localStorage` cache. You don't implement this; just ensure the generated quiz uses the canonical JS verbatim.
 
 Concretely, every "wait for submission" step means:
-1. Tell the user the HTML file path to open + "作答完点提交答案，把下载的 json 放到这个 html 同目录（方便刷新恢复+我读取），然后跟我说「做好了」".
+1. Tell the user: "点击回复里的「打开测验」卡片在学习空间作答，提交后跟我说「做好了」即可（答案会自动保存）。也可以用浏览器打开文件作答，下载 json 后放到测验同目录再告诉我。"
 2. Stop. End your turn.
-3. On their next message claiming completion, ask for the json path (or accept pasted JSON), Read/parse it, and verify completeness before grading. Never assume a default path.
+3. On their next message claiming completion, Read the sibling answers file first (in-space path), else ask for the json path / accept pasted JSON, and verify completeness before grading.
 
 **Grading write-back is dual + restore**: write `grading.json` (structured, for AI resume) AND fill each question's inline `<div class="feedback" id="fb-qN">` slot in the quiz HTML (inject ✓/✗/△ + 失分点 directly under the question) AND fill `<script id="restoreData">` with the user's answers (same payload as answers.json's `answers` field, so the form auto-refills on refresh — no fetch/CORS dependency) + the `<div id="gradingSummary">` summary. Exact Edit recipe in `references/html-format.md`.
 
 ## Initialization flow (first run only)
 
-1. **Capture the topic and target level.** Ask the user what they want to learn and at what target level. Map their phrasing to one of three calibrated levels — this drives plan difficulty, not just `baseline_score`:
+1. **Detect the user's language and fix `locale`.** Look at the user's messages so far: Chinese-dominant → `locale: "zh"`; English-dominant or indeterminate → `locale: "en"`. This single field drives EVERY generated directory and file name for the whole workspace (per the Locale rule and `references/naming.md`) — get it right now, everything downstream depends on it.
+2. **Capture the topic and target level.** Ask the user what they want to learn and at what target level. Map their phrasing to one of three calibrated levels — this drives plan difficulty, not just `baseline_score`:
 
    | 用户说法 | 映射 level | 对计划的影响 |
    |---------|-----------|-------------|
@@ -172,9 +178,9 @@ Concretely, every "wait for submission" step means:
 
    If they only give a topic, assume `practitioner` and say so. Record `target_level` in `meta.json` — every chapter planner and stage planner receives it.
 
-2. **Create the workspace.** Make the directory tree above with an initial `meta.json` (`phase: "baseline"`, `target_level` set, `locale` chosen from the user's language) — including the `notes/` directory (学习空间 UI 独占，AI 不写其中文件；UI 打开章节时按 chapterKey 读对应笔记并自动保存).
-3. **Author the baseline assessment.** Read `references/quiz-types.md` and `references/templates.md`, then generate `00-baseline/baseline.html` (quiz-form, per `references/html-format.md`; 中文: `00-基线测评/基线测评.html`) with a broad diagnostic across the six question types. The point is to probe what the user already knows — include easy through hard items so you can locate their level, not just stump them. Aim for ~15–25 questions scaled across the domain's breadth.
-4. **Hand it to the user.** Tell them the file path, ask them to fill in their answers (or write "don't know"), and follow the upload protocol above. Stop and wait — do not proceed until they upload and you've Read it back.
+3. **Create the workspace.** Make the directory tree above (names derived for the chosen `locale` via `references/naming.md`) with an initial `meta.json` (`phase: "baseline"`, `target_level` set, `locale` set from step 1) — including the `notes/`/`笔记/` directory (学习空间 UI 独占，AI 不写其中文件；UI 打开章节时按 chapterKey 读对应笔记并自动保存).
+4. **Author the baseline assessment.** Read `references/quiz-types.md` and `references/templates.md`, then generate `00-baseline/baseline.html` (quiz-form, per `references/html-format.md`; zh: `00-基线测评/基线测评.html`) with a broad diagnostic across the six question types. The point is to probe what the user already knows — include easy through hard items so you can locate their level, not just stump them. Aim for ~15–25 questions scaled across the domain's breadth.
+5. **Hand it to the user.** Tell them the file path, ask them to fill in their answers (or write "don't know"), and follow the submission protocol above (prefer the learning-space「打开测评」card). Stop and wait — do not proceed until they submit and you've Read the answers back.
 
 Why stop: the entire plan is calibrated to their baseline. Guessing produces a plan that's either boring or brutal.
 
@@ -184,23 +190,23 @@ Triggered when `phase` is `baseline` (after grading) or when starting a new stag
 
 The master plan is the most important artifact in the loop — it must be **grounded in how the field is actually taught**, not invented from AI memory. So planning now starts with a curriculum-research subagent pulling a real learning path, then AI adapts it to the user's baseline.
 
-1. **Grade the baseline.** Read the submitted `baseline-answers.json` (from the baseline.html form), score it, record `baseline_score` and a short qualitative profile (strengths/gaps) in `meta.json` history.
+1. **Grade the baseline.** Read the submitted baseline answers file (`00-baseline/baseline-answers.json`; zh: `00-基线测评/基线测评-答案.json`) — in-space submissions land there automatically, standalone ones per the handoff protocol — score it, record `baseline_score` and a short qualitative profile (strengths/gaps) in `meta.json` history.
 2. **Dispatch a curriculum-research subagent (MANDATORY).** Read `references/curriculum-research.md` and `references/subagent-protocol.md` (Job 5). The subagent fetches ≥2 authoritative learning-path sources (official docs learning pages, canonical roadmaps, authoritative book TOCs) and returns: (a) a **canonical path skeleton** — the consensus stage/chapter structure with source URLs on each, prerequisite notes, and common-teaching gotchas; AND (b) **per-chapter material cards** written to `plan/sources/stageN-chXX.md`, each a one-paragraph reference summary of that chapter's topic from official docs, so later chapter-generation has authoritative material to draw on. On network failure, follow graceful degradation in `references/curriculum-research.md` (AI plan + banner) — do not abort.
 3. **Adapt the skeleton to the user (AI's role = adapter, not architect).** Take the subagent's canonical path + the baseline profile + target_level, and adapt per the allowed-adaptations table in `references/curriculum-research.md`: merge/split chapters for the user's level, add remedial chapters for baseline gaps (marked `补强`), drop the deepest chapter if target_level=aware, adjust depth emphasis. **Never invent a stage axis that contradicts the sources.** Every deviation from the canonical path must be recorded with a reason. The result is grounded structure + user calibration.
-4. **Write `plan/master-plan.html`** (read-mode HTML) from the adapted skeleton. Read `references/templates.md` (read-mode skeleton + master-plan content structure) and `references/html-format.md`. It must include: source citations on each stage/chapter (`[出处: url]` or `[AI推断]`), an explicit "adaptations" section listing every deviation from the canonical path with reasons, and a prerequisite-ordering note. Keep chapters atomic: one concept group each.
-5. **Build stage 1, chapter 1.** Generate — now grounded by the per-chapter material card at `plan/sources/stage1-ch01.md`:
+4. **Write `plan/master-plan.html`** (zh: `计划/总目录.html`, read-mode HTML) from the adapted skeleton. Read `references/templates.md` (read-mode skeleton + master-plan content structure) and `references/html-format.md`. It must include: source citations on each stage/chapter (`[出处: url]` or `[AI推断]`), an explicit "adaptations" section listing every deviation from the canonical path with reasons, and a prerequisite-ordering note. Keep chapters atomic: one concept group each.
+5. **Build stage 1, chapter 1.** Generate — now grounded by the per-chapter material card at `plan/sources/stage1-ch01.md` (zh: `计划/资料/`):
    - `chapters/stage1-ch01-<slug>.html` (read-mode HTML) — the actual teaching content, calibrated to baseline AND grounded by the material card. Read `references/templates.md` (read-mode skeleton + content structure). **The doc MUST include a 知识点清单 + 考点断言 section**: 4–8 KPs, each with 3–6 testable assertions (`KP1-A1…`) — this inventory is the single source of truth for what the chapter's quiz may test. Each core concept must be taught with the **six-element structure** (①精确定义/②直观演示/③最小例子/④推导或代码/⑤边界条件/⑥与相关概念对比) followed by a **零-JS 检查点** (`<details>` self-test, 2–3 questions). **Analogies are banned** — intuition is carried by the ② embedded demo + 观察要点. Formatting is part of the spec: ① per-claim list items, ⑤ a `<ul>` of cases, ⑥ a comparison table. The chapter-generation subagent MUST Read the material card first and ground its content in it. **Skeleton provenance:** Read `references/templates.md` and copy the read-mode skeleton + `<style>` **verbatim from the template** — never copy structure/style from an existing sibling `chapters/*.html` (it may be from an older skill version). The generated file must carry the `<!-- learning-loop skeleton: read-mode -->` signature. **Optional web enhancement:** the chapter planner MAY additionally fetch from whitelist sources (`references/web-research.md`) for live data beyond the card.
    - **Interactive visualizations (default ON, waiver only):** per `references/visualization.md`, EVERY core concept gets an interactive demo at `chapters/viz/stageN-chXX-<kp-slug>.html` unless it is pure recall (waiver must be reasoned in `visualization_decisions`; expect 5–8 demos per chapter). Demos are embedded inline in the concept's **② 直观演示 slot** (as a `<figure class="viz">` `<iframe>` in the HTML) plus a `observe` list of 2–3 action items. The demo must show the mechanism itself, cover the KP's key branches including at least one ⑤ boundary case, and be user-operable (step + reset, ideally a scenario/value control).
    - `quizzes/stage1-ch01-quiz.html` (quiz-form HTML) — the chapter quiz using all six types. Read `references/quiz-types.md` + `references/templates.md` (quiz-form skeleton). Chapter quizzes stay small (6–10 questions, six types ≥1 each). **Every question is a `<fieldset data-qid data-kp data-assert data-type data-points>`** carrying the assertion tags (`data-assert="KP-2-A3"`; replaces the old `[考点: KP-x]` md tag). The submit JS (canonical, from `references/html-format.md`) must be present verbatim. **Skeleton provenance:** copy the quiz `<style>` fresh from `references/templates.md` (not from a sibling quiz); the file must carry the `<!-- learning-loop skeleton: quiz-form -->` signature. Before finalizing, the planner self-checks coverage: for each question, confirm every `data-assert` ID maps to an assertion in the chapter's 断言清单.
-6. **Verify ALL generated HTML before handing to the user** (chapter doc + quiz + any viz). For each HTML file, run the JS static checks in `references/html-format.md` / `references/visualization.md`: syntax (`node --check` on extracted `<script>`), required-element existence (`<form id="quizForm">`, `<button id="submitBtn">`, `<pre id="answerOutput">` for quizzes; titled sections + per-concept checkpoint sections + `kp-asserts` list for read-mode; step/reset controls + `reportHeight()` for viz), no undefined `getElementById` references, and (quizzes) every `data-qid` has a matching form control. **Skeleton-provenance gate (mandatory):** every read-mode HTML must contain `<!-- learning-loop skeleton: read-mode -->` and every quiz must contain `<!-- learning-loop skeleton: quiz-form -->`. A missing signature means the file was built by copying an old sibling instead of the current `references/templates.md` — **do not ship it; regenerate from the template first**. **Assertion-coverage gate:** every `data-assert`/quizKey `assert` ID resolves to the chapter's 断言清单 — rewrite unresolvable questions now, not at grading time. **Formatting gate:** ⑤边界条件 renders as a `<ul>` (no inline `a) b) c)` inside an el-body paragraph), every concept's ② slot holds an embedded demo or a reasoned waiver. **Contamination guard:** no `--vscode-`/`icube-` CSS junk in the file. A file failing any check is NOT shipped: re-dispatch to fix, or degrade that one artifact to markdown per `references/html-format.md`. Never hand the user an HTML that errors on open.
+6. **Verify ALL generated HTML before handing to the user** (chapter doc + quiz + any viz). For each HTML file, run the JS static checks in `references/html-format.md` / `references/visualization.md`: syntax (when a shell with node is available: `node --check` on the extracted `<script>`; otherwise read the script and check bracket/quote balance), required-element existence (`<form id="quizForm">`, `<button id="submitBtn">`, `<pre id="answerOutput">`, `<div id="submitNotice">` for quizzes; titled sections + per-concept checkpoint sections + `kp-asserts` list for read-mode; step/reset controls + `reportHeight()` for viz), no undefined `getElementById` references, and (quizzes) every `data-qid` has a matching form control. **Skeleton-provenance gate (mandatory):** every read-mode HTML must contain `<!-- learning-loop skeleton: read-mode -->` and every quiz must contain `<!-- learning-loop skeleton: quiz-form -->`. A missing signature means the file was built by copying an old sibling instead of the current `references/templates.md` — **do not ship it; regenerate from the template first**. **Naming gate (mandatory):** every generated path matches the workspace locale per `references/naming.md` — in a zh workspace there must be NO English dir names (`chapters/`, `quizzes/`, `wiki/`, `plan/`, `00-baseline/`, `viz/`, `notes/`); in an en workspace no Chinese file names (except meta.json/slug/`_vN`/digit tokens, which never localize). **Assertion-coverage gate:** every `data-assert`/quizKey `assert` ID resolves to the chapter's 断言清单 — rewrite unresolvable questions now, not at grading time. **Formatting gate:** ⑤边界条件 renders as a `<ul>` (no inline `a) b) c)` inside an el-body paragraph), every concept's ② slot holds an embedded demo or a reasoned waiver. **Contamination guard:** no `--dsw-*`/`--dsh-*` custom-property DEFINITIONS (consuming them via `var(..., fallback)` is required) and no `--vscode-`/`icube-` CSS junk in the file. A file failing any check is NOT shipped: re-dispatch to fix, or degrade that one artifact to markdown per `references/html-format.md`. Never hand the user an HTML that errors on open.
 7. Set `phase: "learn"` and tell the user to study and fill the quiz.
 
 Do not generate chapters beyond the current one up front. The next chapter is built by a subagent after this one passes — that's how the loop adapts.
 
 ## Learning + chapter-quiz flow
 
-1. User studies `chapters/stageN-chXX.html` (opens in browser — point them at the 学习路线 pill at the top: 通读 → 每个概念操作②的演示 + 做检查点 → 答错回看对应要素 → 全部检查点通过再开测验), then opens `quizzes/stageN-chXX-quiz.html`, answers via the form, clicks 提交答案 → `stageN-chXX-quiz-answers.json` downloads → tells you "做好了" (see "How submit a quiz works").
-2. **Read `quizzes/stageN-chXX-quiz-answers.json`** (structured, clean) — verify every question key is present (null/missing = unanswered; tell user which, wait).
+1. User studies `chapters/stageN-chXX.html` (zh: `章节/阶段N-章XX.html` — prefer the learning space: click the「打开章节」card in the chat; point them at the 学习路线 pill at the top: 通读 → 每个概念操作②的演示 + 做检查点 → 答错回看对应要素 → 全部检查点通过再开测验), then takes `quizzes/stageN-chXX-quiz.html` via the「打开测验」card (or a browser), answers via the form, clicks 提交答案 → tells you "做好了" (see "How submit a quiz works").
+2. **Read `quizzes/stageN-chXX-quiz-answers.json`** (zh: `测验/阶段N-章XX-测验-答案.json` — in-space submissions land there automatically) — verify every question key is present (null/missing = unanswered; tell user which, wait).
 3. **Coverage check (覆盖度校验) — before grading.** Open the chapter doc HTML and read its **知识点清单 + 考点断言 (assertion inventory)**. **Also read `<script id="quizKey">` from the quiz HTML** — this is the structured answer key (never regex-parse the HTML). For every question in answers.json, look up its assertions from quizKey (`questions[i].assert`) and verify each ID exists in the inventory (fall back to `kp`-level matching for older quizzes without `assert`). Any question whose assertion isn't taught → flagged **超纲 (out-of-scope)**, excluded from scoring per `references/grading.md`.
 4. Grade the quiz using `references/grading.md` (answers now come from the json, not parsed md). Apply 超纲 rule. **Write grading back**: (a) `quizzes/stageN-chXX-quiz-grading.json` (structured per-question record for AI resume); (b) fill each question's `<div class="feedback" id="fb-qN">` slot in `stageN-chXX-quiz.html` with that question's ✓/✗/△ + 失分点 (inline, directly under the question); (c) **fill `<script id="restoreData">` in the SAME html with the user's answers** (`{"answers":{...}}` — copy the `answers` field from answers.json); (d) fill `<div id="gradingSummary">` with `章节测验得分：0.XX`. Steps b/c/d are three independent Edits (per the recipe in `references/html-format.md`). The user reopens the HTML and sees each verdict next to its question AND the form auto-refills with their answers.
 5. **If any 超纲 question was found — 补讲补考 (re-teach + re-test), mandatory.** Per `references/grading.md`: tell the user which question was out-of-scope and why; append the missing concept to the chapter doc as a **补讲 section** (after 核心概念, before 实战演示): under `<h2 id="sec-backfill">补讲</h2>`, add `<h3 id="backfill-<slug>">title <span class="backfill-badge">补讲</span></h3>` + `<p class="backfill-meta">KP·日期·来源</p>` + the six-element `<ol class="elements">` (② 直观演示 may be waived in a 补讲 with a stated reason) + 1–2 checkpoint questions, **AND append the newly-taught assertions to the `kp-asserts` inventory** so the replacement question has an in-scope target, **AND add a matching quick-jump entry under the left TOC's 补讲 group** (`<p class="toc-sub">补讲</p>` + `<a href="#backfill-<slug>">…</a>`) so the user can click to it — see `references/templates.md` / `references/grading.md`; generate ONE replacement question of the same type & point value on the newly-taught concept and ask it (inline if plan-quiz hasn't run yet, append to the plan-quiz round otherwise). The replacement counts normally. Do not leave the user with a gap caused by the course's own under-teaching.
@@ -269,17 +275,27 @@ Subagents run isolated; give them the wiki content and the templates inline so t
 
 ## Resume checklist (every non-first invocation)
 
-1. Find `*-learning/meta.json` in the current directory.
-2. Read `meta.json` + `wiki/progress.md`. **Also read the current chapter's `*-grading.json`** (if it exists) — it's the structured per-quiz record and may be more recent than meta.json if a run was interrupted between grading and updating meta. Reconcile: trust grading.json's score over a stale meta.json score for the same quiz.
-3. **Locate the highest-version chapter doc** — glob `chapters/stageN-chXX-*_v*.html` and pick the highest `_vN`; this is the current doc regardless of what meta.json's `doc_version` says (meta may lag if a rebuild happened but meta wasn't bumped yet). Point the user at that one.
+1. Find existing workspaces: glob BOTH suffixes — `*-learning/meta.json` and `*-学习/meta.json` in the current directory (an English-only glob misses zh workspaces).
+2. Read `meta.json` + `wiki/progress.md` (zh: `知识库/进度.md`). **Also read the current chapter's `*-grading.json`** (if it exists) — it's the structured per-quiz record and may be more recent than meta.json if a run was interrupted between grading and updating meta. Reconcile: trust grading.json's score over a stale meta.json score for the same quiz.
+3. **Locate the highest-version chapter doc** — glob `<chapters|章节>/stageN-chXX-*_v*.html` (both locale dir names) and pick the highest `_vN`; this is the current doc regardless of what meta.json's `doc_version` says (meta may lag if a rebuild happened but meta wasn't bumped yet). Point the user at that one.
 4. Branch on `phase`:
-   - `baseline` → re-issue the baseline assessment or wait for upload.
-   - `plan` / `learn` → point user at the highest-version chapter doc + the current quiz.
-   - `plan-quiz` → **check `quizzes/stageN-chXX-plan-quiz.md` for partial Q&A first.** If it has entries but no 批阅区 summary, resume the plan-quiz from where it left off (continue asking the remaining questions) rather than restarting from scratch. Only restart if the file is empty/missing.
+   - `baseline` → re-issue the baseline assessment or wait for submission.
+   - `plan` / `learn` → point user at the highest-version chapter doc + the current quiz (learning-space cards or file paths).
+   - `plan-quiz` → **check `quizzes/stageN-chXX-plan-quiz.md` (zh: `测验/…-计划测验.md`) for partial Q&A first.** If it has entries but no 批阅区 summary, resume the plan-quiz from where it left off (continue asking the remaining questions) rather than restarting from scratch. Only restart if the file is empty/missing.
    - `stage-end` → re-prompt the stage-end question.
    - `stage-handoff` → **this is a fresh session after a completed stage.** Dispatch the stage-planner subagent (read `references/subagent-protocol.md`) to plan the next stage (chapters + first chapter doc + quiz). Then set `phase: "learn"` and present the first chapter to the user. The handoff preserves context cleanliness — the new session has zero accumulated chat history, reducing error rates.
    - `done` → summarize mastery, offer a new topic.
 5. State in one line where the user is and what's next. Don't dump the whole plan.
+
+## Learning-space integration (how the UI consumes your output)
+
+The dsh learning space (this repository's UI plugins) turns your file output into in-chat entry points and an in-space reading experience. What you need to know:
+
+- **Open cards:** every turn that successfully **writes or edits** a file (`write`/`edit` tool calls) produces a turn-tail card automatically. Card kind follows the produced path: `00-baseline/baseline.html` → 「打开测评」, `plan/master-plan.html` → 「打开总目录」, chapter docs → 「打开章节」, chapter/stage quizzes → 「打开测验」. No card for viz/wiki/answers/grading files or pure chat turns — nothing to do there.
+- **Reading experience:** chapter docs, the master plan, and quizzes all render inside the learning space. Its viewer injects the current dsh theme tokens into your HTML (that's why the skeletons consume `var(--dsw-alias-*, fallback)` — never define those variables yourself) and inlines viz demos automatically.
+- **Quiz submission:** in-space submissions are saved straight into the workspace next to the quiz (`<slug>-answers.json`, localized name) — when the user says「做好了」, just Read that sibling file. See "How submit a quiz works".
+- **Notes are not yours:** the `notes/`/`笔记/` directory belongs to the learning-space UI (per-chapter rich-text notes with branches, keyed by the ASCII chapterKey like `stage1-ch01`). Never write or rename anything in there.
+- **Handover phrasing:** whenever you produce a user-facing artifact, mention the card in one short line — e.g. 「已生成第 1 章，点击上方「打开章节」卡片即可开始学习」. Only when a card exists; don't mention cards on pure-chat turns.
 
 ## Communication style
 

@@ -30,14 +30,14 @@ function parameter(name: string, acceptsUndefined = false): InvocationParameterD
   }
 }
 
-function descriptor(id: string, method: string, parameters: readonly string[]): InvocationDescriptor {
+function descriptor(id: string, method: string, parameters: readonly string[], acceptsUndefined: readonly number[] = []): InvocationDescriptor {
   return {
     id,
     service: 'learning',
     namespace: 'learning',
     method,
     invocation: { kind: 'direct' },
-    parameters: parameters.map(name => parameter(name)),
+    parameters: parameters.map((name, index) => parameter(name, acceptsUndefined.includes(index))),
     result: PASSTHROUGH,
   }
 }
@@ -49,8 +49,9 @@ export const learningContribution: TypertRemoteContribution = {
     descriptor('dsh-learning#describe', 'describe', ['sessionId']),
     descriptor('dsh-learning#listDir', 'listDir', ['sessionId', 'root', 'path']),
     descriptor('dsh-learning#readFile', 'readFile', ['sessionId', 'root', 'path']),
-    descriptor('dsh-learning#readNote', 'readNote', ['sessionId', 'root', 'chapterKey']),
-    descriptor('dsh-learning#writeNote', 'writeNote', ['sessionId', 'root', 'chapterKey', 'content']),
+    descriptor('dsh-learning#readNote', 'readNote', ['sessionId', 'root', 'chapterKey', 'branch'], [3]),
+    descriptor('dsh-learning#writeNote', 'writeNote', ['sessionId', 'root', 'chapterKey', 'content', 'branch'], [4]),
+    descriptor('dsh-learning#saveQuizAnswers', 'saveQuizAnswers', ['sessionId', 'root', 'quizPath', 'json']),
   ],
 }
 
@@ -83,8 +84,9 @@ export interface LearningNamespaceFace {
   describe(sessionId: string): Promise<RemoteResult<{ workspaces: LearningWorkspaceView[] }>>
   listDir(sessionId: string, root: string, path: string): Promise<RemoteResult<{ path: string; entries: LearningEntry[] }>>
   readFile(sessionId: string, root: string, path: string): Promise<RemoteResult<{ content: string; truncated: boolean }>>
-  readNote(sessionId: string, root: string, chapterKey: string): Promise<RemoteResult<{ content: string }>>
-  writeNote(sessionId: string, root: string, chapterKey: string, content: string): Promise<RemoteResult<{ saved: true }>>
+  readNote(sessionId: string, root: string, chapterKey: string, branch?: string): Promise<RemoteResult<{ content: string }>>
+  writeNote(sessionId: string, root: string, chapterKey: string, content: string, branch?: string): Promise<RemoteResult<{ saved: true }>>
+  saveQuizAnswers(sessionId: string, root: string, quizPath: string, json: string): Promise<RemoteResult<{ saved: true; answersPath: string }>>
 }
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -94,6 +96,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'learning/readFile': LearningNamespaceFace['readFile']
     'learning/readNote': LearningNamespaceFace['readNote']
     'learning/writeNote': LearningNamespaceFace['writeNote']
+    'learning/saveQuizAnswers': LearningNamespaceFace['saveQuizAnswers']
   }
   interface TypertRemoteNamespaceMap {
     learning: TypertRemoteNamespace<'learning'>

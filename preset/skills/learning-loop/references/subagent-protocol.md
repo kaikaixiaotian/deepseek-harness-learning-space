@@ -20,8 +20,8 @@ The rebuild case is intentional: the main thread just saw exactly what the user 
 ## Common dispatch rules (all jobs)
 
 1. **Inline the templates and rules.** Subagents start cold with no conversation context. Inline the relevant template sections (from `references/templates.md`), the quiz-type floor rules (from `references/quiz-types.md`), and any grading rules they need (from `references/grading.md`) directly in the prompt. Do not tell a subagent to "read references/templates.md" — point it at files *inside the learning workspace* (which do exist on disk) only for content it must absorb, and even then prefer pasting that content inline for reliability.
-2. **Inline the wiki.** If the job depends on prior learning state, paste the contents of the relevant `wiki/*.md` files inline.
-3. **Specify the output path(s) absolutely.** Tell the subagent exactly which file(s) to write and their full paths.
+2. **Inline the wiki.** If the job depends on prior learning state, paste the contents of the relevant wiki file(s) inline.
+3. **Specify the output path(s) absolutely AND localized.** Tell the subagent exactly which file(s) to write and their full paths. The placeholder paths in the skeletons below (like `<wiki-dir>/stageN-chXX-wiki.md`) are en logical names — YOU must fill in the real absolute path derived from the workspace's `meta.json.locale` per `references/naming.md` (e.g. zh workspace: `<workspace>/知识库/阶段1-章01-知识.md`). Never hand a subagent an English literal path for a zh workspace.
 4. **Specify the format.** "Return the written file path and a 3-line summary of what you produced. Do not dump the full content back."
 5. **Give the calibration inputs.** `baseline_score`, `target_level`, current stage/chapter, and the user's known weak spots from the wiki.
 6. **One job per subagent.** Don't ask one subagent to both write the wiki and plan the next chapter — the wiki must exist *before* the next chapter is planned, so sequence them.
@@ -43,7 +43,7 @@ Context:
 - Plan-quiz Q&A and combined score: <paste inline>
 
 Use the `read` tool on the chapter doc path above, then use the `write` tool to write the file
-<abs path to wiki/stageN-chXX-wiki.md> with EXACTLY this structure:
+<abs path to <wiki-dir>/stageN-chXX-wiki.md  (localized per naming.md)> with EXACTLY this structure:
 <paste the wiki schema from references/wiki-schema.md inline here>
 
 Be specific and honest — this file guides how the NEXT chapter is planned.
@@ -66,15 +66,15 @@ You are planning the next chapter of an AI tutoring system.
 Context:
 - Topic: <topic>, target level: <level>
 - User baseline score: <x> (0..1)
-- Master plan path: <path to plan/master-plan.html>  [USE THE read tool ON THIS]
+- Master plan path: <abs path to <plan-dir>/master-plan.html  (localized per naming.md)>  [USE THE read tool ON THIS]
 - Previous chapter's wiki (READ THIS WITH THE read tool — adapt to what it says): <path>
 - Known weak spots across all chapters so far (inline): <bulleted list distilled from wikis>
 
 The NEXT chapter to build is Stage <N> Chapter <XX>: <slug> — <objective>.
 
 Produce TWO files (BOTH are HTML — see references/html-format.md):
-1. <abs path to chapters/stageN-chXX-<slug>.html> — the chapter doc (read-mode HTML)
-2. <abs path to quizzes/stageN-chXX-quiz.html> — its quiz (quiz-form HTML)
+1. <abs path to <chapters-dir>/stageN-chXX-<slug>.html> — the chapter doc (read-mode HTML; localized per naming.md)
+2. <abs path to <quizzes-dir>/stageN-chXX-quiz.html> — its quiz (quiz-form HTML; localized per naming.md)
 
 Chapter doc template (follow exactly):
 <paste the read-mode HTML skeleton from references/templates.md inline — note the
@@ -132,7 +132,7 @@ VISUALIZATION (default ON — waiver only for pure-recall KPs):
   waiver. The old "≥2 signals" gate is retired; the signal table is now a
   demo-pattern selector (paste it from references/visualization.md).
 - For each demo, generate a STANDALONE interactive HTML file at:
-  <abs path to chapters/viz/stageN-chXX-<kp-slug>.html>
+  <abs path to <chapters-dir>/viz/stageN-chXX-<kp-slug>.html>  (viz stays ASCII in the path; localized per naming.md)
   Hard quality bar ("真正的演示", non-negotiable):
   (1) it shows the mechanism ITSELF — the real entities (变量槽/栈帧/堆对象/
       引用箭头/缓存条目) drawn explicitly, state changing visibly per step.
@@ -182,8 +182,11 @@ VISUALIZATION (default ON — waiver only for pure-recall KPs):
       an explicit reasoned waiver there.
   (h) checkpoints: every concept has <section class="checkpoint"> with 2–3
       <details> Q&A blocks.
-  (i) contamination guard: the HTML must NOT contain "--vscode-" or
-      "icube-theme-variables" (guards against accidental IDE-CSS paste; a real
+  (i) contamination guard: the HTML must NOT define any "--dsw-*"/"--dsh-*"
+      custom properties (consuming them via var(--dsw-alias-*, fallback) is
+      required — the theme bridge — but defining them overrides the host
+      theme) and must NOT contain "--vscode-" or "icube-theme-variables"
+      strings (guards against accidental IDE-CSS paste; a real
       incident in a generated chapter once added ~1900 junk lines).
 
 QUIZ HTML RULES (the quiz is now a form, not md — see references/html-format.md):
@@ -196,7 +199,7 @@ QUIZ HTML RULES (the quiz is now a form, not md — see references/html-format.m
   text/textarea id="qN".
 - Copy the canonical submit JS from references/html-format.md verbatim — do NOT
   rewrite it.
-- **FILL the `<script id="quizKey">` tag with the correct answers** (mandatory — this is what the grader reads instead of regex-parsing the HTML). Use the schema from references/html-format.md: for each question, include `qid`/`type`/`kp`/`assert`/`points` + either `answer` (objective types) or `rubric` (subjective types). Every qid must match a `<fieldset data-qid>` 1:1. The quizKey must be valid JSON — verify with JSON.parse before returning.
+- **FILL the `<script id="quizKey">` tag with the correct answers** (mandatory — this is what the grader reads instead of regex-parsing the HTML). Use the schema from references/html-format.md: for each question, include `qid`/`type`/`kp`/`assert`/`points` + either `answer` (objective types) or `rubric` (subjective types). Every qid must match a `<fieldset data-qid>` 1:1. The quizKey must be valid JSON — before returning, re-read it and verify every bracket, quote, and comma balances (you cannot execute code; check it by careful reading).
 
 Include in your return summary a visualization_decisions block (every KP appears — demo with pattern+branches, or reasoned waiver) and a viz_files_written list per references/visualization.md:
   visualization_decisions:
@@ -216,7 +219,7 @@ Return only: the file paths (chapter doc, quiz, any viz files) and a summary inc
 After it returns: **three spot-checks before handing to the user.**
 1. Coverage: open the chapter doc's 断言清单 and the quiz's `data-assert` tags — fix any mismatch inline (unlisted assertion = rewrite the question).
 2. Visualization verification: for EVERY html file returned, run the JS static checks in `references/visualization.md` yourself (syntax check via `node --check` on the extracted script; element-existence; undefined-reference; `__vizHeight` present). A failing demo is NOT shipped — re-dispatch the planner to fix the specific failure, or drop the demo and fill the ② slot with a reasoned waiver. Also verify demo COVERAGE: every KP has an embedded demo or an explicit waiver in its ② slot, and `branches_covered` names at least one ⑤边界条件 case. Do not trust the subagent's self-verify alone; re-run the checks.
-3. Formatting gate: grep the chapter doc for inline enumeration in el-body (`a)` inside a `<p>`) and confirm every ⑤边界条件 is a `<ul>`, every concept has a `checkpoint` section, and no `--vscode-`/`icube-` CSS junk is present. Fix violations inline or re-dispatch.
+3. Formatting gate: grep the chapter doc for inline enumeration in el-body (`a)` inside a `<p>`) and confirm every ⑤边界条件 is a `<ul>`, every concept has a `checkpoint` section, and no `--dsw-*`/`--dsh-*` custom property DEFINITIONS or `--vscode-`/`icube-` CSS junk is present. Fix violations inline or re-dispatch.
 Then set `phase: "learn"`, advance `current_chapter`, tell the user the next chapter is ready.
 
 ## Job 3: Stage planner (when advancing to a new stage)
@@ -237,10 +240,10 @@ Context:
   <list paths>
 
 Produce (all HTML — see references/html-format.md):
-1. Update <abs path to plan/master-plan.html> — fill in stage <N+1>'s chapter
+1. Update <abs path to <plan-dir>/master-plan.html> — fill in stage <N+1>'s chapter (localized per naming.md)
    list if not already detailed (title + objective + type emphasis each).
-2. <abs path to chapters/stage<N+1>-ch01-<slug>.html> — first chapter doc (read-mode)
-3. <abs path to quizzes/stage<N+1>-ch01-quiz.html> — its quiz (quiz-form)
+2. <abs path to <chapters-dir>/stage<N+1>-ch01-<slug>.html> — first chapter doc (read-mode; localized per naming.md)
+3. <abs path to <quizzes-dir>/stage<N+1>-ch01-quiz.html> — its quiz (localized per naming.md) (quiz-form)
 
 Templates and quiz floor rules (paste inline):
 <paste read-mode HTML skeleton + quiz-form HTML skeleton + quiz floor rules +
@@ -271,7 +274,8 @@ SELF-VERIFY each HTML file before returning:
 (c) required elements present (quizForm/submitBtn/answerOutput/gradingSummary + each fieldset's fb-qN slot for quiz);
 (d) every data-qid="qN" has a control with name/id = "qN";
 (e) every KP has a viz embedded in its ② slot or a reasoned waiver there;
-    every concept has a checkpoint section; no "--vscode-"/"icube-" CSS junk.
+    every concept has a checkpoint section; no "--dsw-*"/"--dsh-*" custom property
+    definitions and no "--vscode-"/"icube-" CSS junk.
 
 Calibration: this is stage <N+1>, so difficulty steps up. But honor the
 weak spots from prior wikis — reinforce before extending.
@@ -287,14 +291,14 @@ After it returns: **re-verify the HTML yourself** (do not trust the subagent's s
 
 **Input to pass:** the stage's full scope — all chapter topics + the cumulative weak spots from chapter wikis. The researcher does NOT write the quiz; it returns a brief that the stage-total planner composes into questions.
 
-**Critical tools note:** This subagent needs network access. It must use the `WebSearch` and `WebFetch` tools. When dispatching, remind it explicitly: "Use the WebSearch tool to find official sources, then WebFetch to read them. Do NOT fabricate sources."
+**Critical tools note:** This subagent needs network access. It must use the DSH web tools `web_search` and `web_fetch`. When dispatching, remind it explicitly: "Use web_search to find official sources, then web_fetch to read them. Do NOT fabricate sources."
 
 **Prompt skeleton:**
 
 ```
 You are researching authoritative material for a stage-total quiz in an AI tutoring system.
 
-TOOLS: Use WebSearch and WebFetch. Every fact you return MUST come with a real URL you actually fetched. Do NOT invent or guess URLs. If you cannot find an authoritative source for a fact, omit it and note the gap.
+TOOLS: Use the DSH web tools web_search and web_fetch. Every fact you return MUST come with a real URL you actually fetched. Do NOT invent or guess URLs. If you cannot find an authoritative source for a fact, omit it and note the gap.
 
 Context:
 - Topic: <topic>, target level: <level>
@@ -364,9 +368,9 @@ Return only the brief. Do not write any quiz file.
 
 **Purpose:** pull a canonical learning path from authoritative sources so the master plan reflects how the field is actually taught, not AI's invented structure. This is the fix for "messy plans". Read `references/curriculum-research.md` for the full spec.
 
-**Critical tools note:** needs network access — must use `WebSearch` and `WebFetch`. Remind it explicitly: "Use WebSearch to find official learning paths/roadmaps, then WebFetch to read them. Do NOT fabricate sources or invent a path from memory."
+**Critical tools note:** needs network access — must use the DSH web tools `web_search` and `web_fetch`. Remind it explicitly: "Use web_search to find official learning paths/roadmaps, then web_fetch to read them. Do NOT fabricate sources or invent a path from memory."
 
-**Input to pass:** the topic, the user's target_level (as a depth hint), and the absolute output directory for the per-chapter cards (`plan/sources/`).
+**Input to pass:** the topic, the user's target_level (as a depth hint), and the absolute output directory for the per-chapter cards (the localized sources dir).
 
 **Prompt skeleton:**
 
@@ -375,7 +379,7 @@ You are researching the canonical learning path for an AI tutoring system's
 master plan. You do NOT write the plan — you return a skeleton + per-chapter
 material cards that the planner will adapt.
 
-TOOLS: Use WebSearch and WebFetch. Every structural claim (stage/chapter
+TOOLS: Use the DSH web tools web_search and web_fetch. Every structural claim (stage/chapter
 ordering) MUST come from a real fetched URL. Do NOT invent a path from memory.
 
 Context:
@@ -422,10 +426,10 @@ DEGRADATION NOTES:
 - <topics with no whitelist curriculum — flag for AI fill, marked unverified>
 
 ALSO: for EACH chapter in the canonical path, write a per-chapter material card
-to <abs path>/plan/sources/stageN-chXX.md using this format (paste the card
+to <abs path>/<sources-dir>/stageN-chXX.md using this format (paste the card
 template from references/curriculum-research.md). These cards let later
 chapter-generation draw on authoritative material instead of re-fetching.
-Create the plan/sources/ directory if it doesn't exist.
+Create the localized sources directory if it doesn't exist.
 
 AUTHENTICITY RULES:
 - Whitelist only for the skeleton structure.

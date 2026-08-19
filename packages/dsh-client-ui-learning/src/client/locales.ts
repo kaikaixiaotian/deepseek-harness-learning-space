@@ -6,6 +6,8 @@ export const NS = 'learning-space'
 export const zh = {
   cardChapter: '打开章节',
   cardQuiz: '打开测验',
+  cardBaseline: '打开测评',
+  cardPlan: '打开总目录',
   cardOpen: '在学习空间中打开',
   cardExternal: '在外部打开',
   back: '返回 dsh',
@@ -14,6 +16,7 @@ export const zh = {
   noWorkspace: '当前会话目录没有学习工作区',
   connectFailed: '学习空间服务尚未连接',
   treeBaseline: '基线测评',
+  treePlan: '总目录',
   treeChapters: '章节',
   treeQuizzes: '测验',
   treeEmpty: '（空）',
@@ -32,6 +35,10 @@ export const zh = {
   noteCode: '代码',
   noteQuote: '引用',
   noteClear: '清除格式',
+  noteBranchMain: '主笔记',
+  noteBranchNew: '新建分支',
+  noteBranchNamePlaceholder: '分支名…',
+  quizSubmitted: '已交卷：答案已保存到工作区',
 }
 
 /** Union of this namespace's dictionary keys. */
@@ -41,6 +48,8 @@ export type LearningSpaceKey = keyof typeof zh
 export const en: Record<LearningSpaceKey, string> = {
   cardChapter: 'Open chapter',
   cardQuiz: 'Open quiz',
+  cardBaseline: 'Open assessment',
+  cardPlan: 'Open master plan',
   cardOpen: 'Open in learning space',
   cardExternal: 'Open externally',
   back: 'Back to dsh',
@@ -49,6 +58,7 @@ export const en: Record<LearningSpaceKey, string> = {
   noWorkspace: 'No learning workspace found in this session directory',
   connectFailed: 'Learning space service is not connected yet',
   treeBaseline: 'Baseline',
+  treePlan: 'Plan',
   treeChapters: 'Chapters',
   treeQuizzes: 'Quizzes',
   treeEmpty: '(empty)',
@@ -67,6 +77,10 @@ export const en: Record<LearningSpaceKey, string> = {
   noteCode: 'Code',
   noteQuote: 'Quote',
   noteClear: 'Clear format',
+  noteBranchMain: 'Main note',
+  noteBranchNew: 'New branch',
+  noteBranchNamePlaceholder: 'Branch name…',
+  quizSubmitted: 'Submitted: answers saved to the workspace',
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

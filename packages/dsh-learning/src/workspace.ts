@@ -160,13 +160,54 @@ export function chapterKeyOf(path: string): string | null {
   return slug === '' ? stem : stem + '-' + slug
 }
 
-/** Note file name for one chapter key inside the notes dir. */
-export function noteFileOf(dirs: WorkspaceDirs, chapterKey: string): string {
+/**
+ * Note file name for one chapter key inside the notes dir. `branch` is the
+ * optional per-chapter note branch: the default branch keeps the historical
+ * single-file name (zero migration for existing data), extra branches slot
+ * between the key and the localized note suffix.
+ */
+export function noteFileOf(dirs: WorkspaceDirs, chapterKey: string, branch?: string): string {
   const suffix = dirs.notes === '笔记' ? '-笔记.html' : '-note.html'
-  return dirs.notes + '/' + chapterKey + suffix
+  const slot = branch === undefined || branch === '' ? '' : '-' + branch
+  return dirs.notes + '/' + chapterKey + slot + suffix
+}
+
+/** Note branches parsed from the notes dir listing of one chapter key. */
+export function noteBranchesOf(chapterKey: string, fileNames: readonly string[]): string[] {
+  const branches = new Set<string>()
+  const prefix = chapterKey + '-'
+  for (const name of fileNames) {
+    if (!name.startsWith(prefix)) continue
+    const rest = name.slice(prefix.length)
+    // strip the localized suffix tail after the branch slot
+    const cut = Math.max(rest.lastIndexOf('-note.html'), rest.lastIndexOf('-笔记.html'))
+    if (cut <= 0) continue
+    branches.add(rest.slice(0, cut))
+  }
+  // default branch (exact `<key>-note.html` / `<key>-笔记.html`) first, then named ones
+  const list = [...branches].filter(branch => branch !== '').sort()
+  return ['', ...list]
 }
 
 /** Validate a chapter key before it ever touches the filesystem. */
 export function isSafeChapterKey(chapterKey: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(chapterKey)
+}
+
+/** Validate a note branch name; '' = default branch (ASCII or zh word chars). */
+export function isSafeBranch(branch: string): boolean {
+  return branch === '' || /^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_-]*$/.test(branch)
+}
+
+/**
+ * Answers file name for one quiz/baseline html file, per naming.md: it sits
+ * next to the quiz with the same stem plus the localized answers marker.
+ */
+export function answersFileOf(locale: string, quizFileBase: string): string {
+  return quizFileBase + (locale === 'zh' ? '-答案.json' : '-answers.json')
+}
+
+/** Loose stem guard for quiz/baseline file names (ASCII or zh word chars). */
+export function isSafeQuizStem(stem: string): boolean {
+  return /^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_-]*$/.test(stem)
 }

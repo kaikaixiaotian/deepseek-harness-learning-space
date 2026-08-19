@@ -1,6 +1,6 @@
 # Naming Table (语言自适应命名)
 
-唯一权威的目录/文件名映射表。生成或读取任何文件前，先读本文件，按工作区 `meta.json` 的 `locale` 取值推导出当次的真实路径名。**en 是 canonical（技能 references 与 SKILL.md 中的逻辑名），zh 是其本地化名。**
+唯一权威的目录/文件名映射表。生成或读取任何文件前，先读本文件，按工作区 `meta.json` 的 `locale` 取值推导出当次的真实路径名。**en 是逻辑名（技能 references 与 SKILL.md 中书写的形式），zh 是其本地化名——SKILL.md 里出现的每一个 en 路径都是逻辑名，落盘前必须查本表转换。**
 
 ## 铁律
 
@@ -11,14 +11,14 @@
 
 ## locale 取值
 
-| locale | 含义 | 判定 |
+| locale | 含义 | 判定（操作化） |
 |---|---|---|
-| `zh` | 中文 | 用户最近消息以中文为主 |
-| `en` | 英文 | 用户最近消息以英文为主 / 无法判定 |
+| `zh` | 中文 | 用户消息以中文为主（中文词汇占多数即可，混有少量英文术语也算 zh） |
+| `en` | 英文 | 用户消息以英文为主 / 完全无法判定 |
 
 ## Token 映射表
 
-| 逻辑名（en，canonical） | zh | 用途 |
+| 逻辑名（en） | zh | 用途 |
 |---|---|---|
 | `-learning` | `-学习` | 工作区目录后缀 |
 | `00-baseline` | `00-基线测评` | 基线测评目录 |
@@ -45,16 +45,26 @@
 | `progress.md` | `进度.md` | 总进度日志 |
 | `stageN-chXX.md` | `阶段N-章XX.md` | 章节资料卡（plan/sources/ 下） |
 | `notes` | `笔记` | 笔记目录（学习空间 UI 独占读写，AI 不写） |
-| `stageN-chXX-<slug>-note.html` | `阶段N-章XX-<slug>-笔记.html` | 每章一个富文本笔记文件（学习空间 UI 按 chapterKey 读写） |
+| `notes/<chapterKey>-note.html` | `笔记/<chapterKey>-笔记.html` | 每章笔记（学习空间 UI 读写；chapterKey 恒为 ASCII 归一键如 `stage1-ch01-intro`，可选分支槽 `<chapterKey>-<branch>-note.html`；AI 永不创建/改名） |
 
 ## 组合规则
 
 - 文件名 = 前缀（如 `stageN-chXX`）+ 中缀（`quiz` / `wiki` / `plan-quiz` 或 `<slug>` / `<kp>`）+ 后缀（`.html` / `.json` / `.md`）。zh 下把 en 前缀/中缀换成对应 zh 词，其余（数字、slug、扩展名、`_vN`）不变。
-- 测验的 answers/grading 始终与 quiz 同名同目录（仅后缀词变化），使 quiz 表单的 submit JS 下载名、restore-on-load 的 fetch 名、评分写回名三者一致。
-- 工作区发现：目录名以 `naming.md` 的 workspace 后缀之一结尾（`-learning` / `-学习`）且含 `meta.json`。
+- 测验的 answers/grading 始终与 quiz 同名同目录（仅后缀词变化），使 quiz 表单的提交保存名（学习空间内）、restore-on-load 的读取名、评分写回名三者一致。
+- 工作区发现：目录名以本表的 workspace 后缀之一结尾（`-learning` / `-学习`）且含 `meta.json`——**两个后缀都要 glob**。
 
-## 使用
+## 使用（好/坏对照）
 
 - init：探测语言 → 写 `meta.json.locale` → 建目录/文件时按本表推导真实名；初始化时一并创建 `notes`/`笔记` 目录（学习空间 UI 使用，AI 不写其中文件）。
 - resume：读 `meta.json.locale` → 用本表把 en 逻辑名映射回该工作区的真实名，再 glob/read。
 - 子代理：prompt 里给出「按本表 + 该工作区 locale 推导的绝对输出路径」，不要让它自己猜名字。
+
+**zh 工作区对照示例（locale: "zh"）：**
+
+| 动作 | ✅ 正确 | ❌ 错误（照抄了 en 逻辑名） |
+|---|---|---|
+| 建第 1 章教材 | write `react-学习/章节/阶段1-章01-入门.html` | write `react-学习/chapters/stage1-ch01-intro.html` |
+| 读章节测验答案 | read `react-学习/测验/阶段1-章01-测验-答案.json` | read `react-学习/quizzes/stage1-ch01-quiz-answers.json` |
+| 写章节知识记录 | write `react-学习/知识库/阶段1-章01-知识.md` | write `react-学习/wiki/stage1-ch01-wiki.md` |
+| 重建 v2 | write `章节/阶段1-章01-入门_v2.html`（数字与 `_v2` 不本地化） | 把「阶段1」写成「阶段一」 |
+| en 工作区同理反向 | write `react-learning/chapters/stage1-ch01-intro.html` | write `react-learning/章节/阶段1-章01.html` |

@@ -25,10 +25,14 @@ import { readdir, readFile, rename, writeFile, mkdir, realpath } from 'node:fs/p
 import { basename, join, resolve, relative, sep, isAbsolute } from 'node:path'
 import {
   META_FILE,
+  answersFileOf,
   deriveLocale,
   isLearningWorkspaceDir,
+  isSafeBranch,
   isSafeChapterKey,
+  isSafeQuizStem,
   noteFileOf,
+  stemOf,
   workspaceDirs,
   type WorkspaceDirs,
 } from './workspace.js'
@@ -135,8 +139,8 @@ export default class LearningService extends TypertRemoteService {
 
   /** Read one chapter note (empty when it does not exist yet). */
   @Remote
-  async readNote(sessionId: string, root: string, chapterKey: string): Promise<{ content: string }> {
-    const note = await this.notePath(root, chapterKey)
+  async readNote(sessionId: string, root: string, chapterKey: string, branch?: string): Promise<{ content: string }> {
+    const note = await this.notePath(root, chapterKey, branch)
     if (note.base === undefined) return { content: '' }
     let real: string
     try {
@@ -154,8 +158,8 @@ export default class LearningService extends TypertRemoteService {
 
   /** Save one chapter note (creates the notes dir on demand; atomic write). */
   @Remote
-  async writeNote(sessionId: string, root: string, chapterKey: string, content: string): Promise<{ saved: true }> {
-    const note = await this.notePath(root, chapterKey)
+  async writeNote(sessionId: string, root: string, chapterKey: string, content: string, branch?: string): Promise<{ saved: true }> {
+    const note = await this.notePath(root, chapterKey, branch)
     if (note.base === undefined) {
       throw new Error('learning.note: the learning workspace does not exist')
     }
@@ -169,23 +173,53 @@ export default class LearningService extends TypertRemoteService {
     return { saved: true }
   }
 
+  /**
+   * Save a quiz/baseline answers payload next to its html file — the
+   * in-space submit path of the learning-loop quiz form. The answers file
+   * name is derived host-side from the quiz stem plus the localized marker,
+   * and it may only land in the quizzes or baseline dir.
+   */
+  @Remote
+  async saveQuizAnswers(sessionId: string, root: string, quizPath: string, json: string): Promise<{ saved: true; answersPath: string }> {
+    const meta = await this.readMeta(root)
+    const locale = meta === undefined ? 'en' : deriveLocale(meta)
+    const dirs = workspaceDirs(locale)
+    const normalized = quizPath.replace(/\\/g, '/')
+    const segments = normalized.split('/')
+    const stem = stemOf(normalized)
+    const dirName = segments.length > 1 ? segments[segments.length - 2] ?? '' : ''
+    const allowedDirs = [dirs.quizzes, dirs.baseline, 'quizzes', '测验', '00-baseline', '00-基线测评']
+    if (!allowedDirs.includes(dirName) || !isSafeQuizStem(stem)) {
+      throw new Error('learning.saveQuizAnswers: the path is not a quiz or baseline file in this workspace')
+    }
+    const quizDir = await this.contained(root, segments.slice(0, -1).join('/'), 'answers')
+    const target = join(quizDir, answersFileOf(locale, stem))
+    const tmp = target + '.tmp-' + Date.now().toString(36)
+    await writeFile(tmp, json, 'utf8')
+    await rename(tmp, target)
+    return { saved: true, answersPath: target }
+  }
+
   // - internals ------------------------------------------------
 
   /**
    * Resolve a chapter-note location WITHOUT requiring the note file (or the
    * notes dir) to exist yet. The relative path is assembled from whitelisted
-   * tokens only (dir token from meta.json locale + safe chapter key), so a
-   * lexical '..' escape is impossible by construction; `base` is the
-   * workspace's realpath for the symlink-escape checks at use sites.
+   * tokens only (dir token from meta.json locale + safe chapter key + safe
+   * branch), so a lexical '..' escape is impossible by construction; `base`
+   * is the workspace's realpath for the symlink-escape checks at use sites.
    */
-  private async notePath(root: string, chapterKey: string): Promise<{ base: string | undefined; full: string; dir: string }> {
+  private async notePath(root: string, chapterKey: string, branch?: string): Promise<{ base: string | undefined; full: string; dir: string }> {
     if (!isSafeChapterKey(chapterKey)) {
       throw new Error('learning: invalid chapter key')
+    }
+    if (branch !== undefined && !isSafeBranch(branch)) {
+      throw new Error('learning: invalid note branch')
     }
     const meta = await this.readMeta(root)
     const dirs = meta === undefined ? workspaceDirs('en') : workspaceDirs(deriveLocale(meta))
     const dir = resolve(root, dirs.notes)
-    const full = resolve(root, noteFileOf(dirs, chapterKey))
+    const full = resolve(root, noteFileOf(dirs, chapterKey, branch))
     let base: string | undefined
     try {
       base = await realpath(resolve(root))

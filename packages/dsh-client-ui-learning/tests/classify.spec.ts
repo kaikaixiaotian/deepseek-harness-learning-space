@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chapterKeyOf, classifyPath, selectProducedLearning } from '../src/client/classify.ts'
+import { chapterKeyOf, classifyPath, isSafeNoteBranch, noteBranchesOf, selectProducedLearning } from '../src/client/classify.ts'
 
 describe('classifyPath', () => {
   it('recognizes chapter files in both locales', () => {
@@ -17,9 +17,18 @@ describe('classifyPath', () => {
     expect(classifyPath('C:/w/react-learning/quizzes/stage1-ch01-quiz-answers.json')).toBeNull()
     expect(classifyPath('C:/w/react-learning/quizzes/stage1-ch01-quiz-grading.json')).toBeNull()
   })
+  it('recognizes the baseline assessment and master plan in both locales', () => {
+    expect(classifyPath('C:/w/react-learning/00-baseline/baseline.html')).toBe('baseline')
+    expect(classifyPath('C:/w/react-学习/00-基线测评/基线测评.html')).toBe('baseline')
+    expect(classifyPath('C:/w/react-learning/00-baseline/baseline-answers.json')).toBeNull()
+    expect(classifyPath('C:/w/react-learning/quizzes/baseline.html')).toBe('baseline')
+    expect(classifyPath('C:/w/react-learning/plan/master-plan.html')).toBe('plan')
+    expect(classifyPath('C:/w/react-学习/计划/总目录.html')).toBe('plan')
+    expect(classifyPath('C:/w/react-learning/plan/sources/stage1-ch01.md')).toBeNull()
+    expect(classifyPath('C:/w/react-learning/plan/master-plan-grading.json')).toBeNull()
+  })
   it('ignores unrelated files', () => {
     expect(classifyPath('C:/w/other/app.ts')).toBeNull()
-    expect(classifyPath('C:/w/react-learning/plan/master-plan.html')).toBeNull()
   })
 })
 
@@ -44,6 +53,15 @@ describe('selectProducedLearning', () => {
     expect(selection?.chapter?.kind).toBe('chapter')
     expect(selection?.quiz?.kind).toBe('quiz')
   })
+  it('yields baseline and plan cards for the early phases', () => {
+    const selection = selectProducedLearning([
+      'C:/w/react-学习/00-基线测评/基线测评.html',
+      'C:/w/react-学习/计划/总目录.html',
+    ])
+    expect(selection?.baseline?.kind).toBe('baseline')
+    expect(selection?.plan?.kind).toBe('plan')
+    expect(selection?.chapter).toBeNull()
+  })
   it('yields nothing without learning files', () => {
     expect(selectProducedLearning(['C:/w/app.ts'])).toBeNull()
     expect(selectProducedLearning([])).toBeNull()
@@ -54,5 +72,28 @@ describe('selectProducedLearning', () => {
       'C:/w/react-learning/chapters/stage1-ch01-intro_v2.html',
     ])
     expect(selection?.chapter?.path).toContain('_v2')
+  })
+})
+
+describe('noteBranchesOf / isSafeNoteBranch', () => {
+  it('lists the default branch first plus named branches, both locales', () => {
+    expect(noteBranchesOf('stage1-ch01', [
+      'stage1-ch01-note.html',
+      'stage1-ch01-ideas-note.html',
+      'stage1-ch01-review-note.html',
+      'stage1-ch02-note.html',
+      'unrelated.html',
+    ])).toEqual(['', 'ideas', 'review'])
+    expect(noteBranchesOf('stage1-ch01', [
+      'stage1-ch01-笔记.html',
+      'stage1-ch01-错题-笔记.html',
+    ])).toEqual(['', '错题'])
+  })
+  it('accepts only safe branch names (ascii or zh, no separators)', () => {
+    expect(isSafeNoteBranch('')).toBe(true)
+    expect(isSafeNoteBranch('ideas-2')).toBe(true)
+    expect(isSafeNoteBranch('错题本')).toBe(true)
+    expect(isSafeNoteBranch('../escape')).toBe(false)
+    expect(isSafeNoteBranch('a b')).toBe(false)
   })
 })
