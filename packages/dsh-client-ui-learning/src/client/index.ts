@@ -19,11 +19,30 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-client-ui-learning: dictionaries')
 
   // Mount the host Remote contribution; a duplicate mount (plugin HMR) warns
-  // and keeps the already-mounted namespace. Publish the face once resolved.
-  void ctx.remote.$mount(learningContribution).then(
-    () => { setLearningFace(learningFace(ctx)) },
-    (error: unknown) => { console.warn('[dsh-client-ui-learning] remote contribution mount failed', error) },
-  )
+  // and keeps the already-mounted namespace. The mount publishes the
+  // namespace as the nested Cordis service 'remote.learning', which only an
+  // inject-declaring context may read (a bare ctx.remote.learning getter
+  // throws 'cannot get property without inject') — so the face is captured
+  // in the inject scope below, which fires once the mount publishes it.
+  void ctx.remote.$mount(learningContribution).catch((error: unknown) => {
+    console.warn('[dsh-client-ui-learning] remote contribution mount failed', error)
+  })
+
+  // The mount publishes the namespace as the whole-string Cordis service
+  // 'remote.learning'; reading it through the chained property (nsCtx.remote
+  // then .learning) is blocked by the traceable proxy, so resolve the face
+  // through the service name directly inside an inject scope for it. Hold the
+  // live service object without validating its methods at scope-up: $mount
+  // publishes the service BEFORE installing describe/listDir/… onto it, and
+  // the scope callback can fire inside that window — the methods appear on
+  // the same object (defineProperty) before any real call goes through.
+  ctx.inject(['remote.learning'], (nsCtx) => {
+    const service = (nsCtx as { 'remote.learning'?: unknown })['remote.learning']
+    if (service !== undefined && service !== null) {
+      setLearningFace(service as LearningNamespaceFace)
+    }
+    return () => { setLearningFace(null) }
+  })
 
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
@@ -44,9 +63,3 @@ export function apply(ctx: ClientContext): void {
   }, LearningSpaceOverlay))
 }
 
-/** Resolve the mounted namespace face, or null while not connected yet. */
-function learningFace(ctx: ClientContext): LearningNamespaceFace | null {
-  const remote = (ctx as unknown as { remote: { learning?: LearningNamespaceFace } }).remote
-  const face = remote?.learning
-  return face !== undefined && typeof face.describe === 'function' ? face : null
-}

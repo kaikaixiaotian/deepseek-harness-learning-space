@@ -211,12 +211,14 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
 
   const [workspaces, setWorkspaces] = useState<LearningWorkspaceView[] | null>(null)
   const [connectError, setConnectError] = useState(false)
+  const [connectDetail, setConnectDetail] = useState<string | null>(null)
   const [workspace, setWorkspace] = useState<LearningWorkspaceView | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
 
   useEffect(() => {
     if (!space.open) return
     setConnectError(false)
+    setConnectDetail(null)
     setWorkspaces(null)
     setWorkspace(null)
     setSelected(null)
@@ -240,8 +242,13 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
         if (focus !== undefined && picked !== undefined && focus.startsWith(picked.root)) {
           setSelected(focus)
         }
-      } catch {
-        if (!cancelled) setConnectError(true)
+      } catch (err) {
+        // Surface the host-side reason (offline namespace, dead session,
+        // unreadable cwd): a bare 'not connected' hides all of them.
+        if (!cancelled) {
+          setConnectError(true)
+          setConnectDetail(err instanceof Error ? err.message : String(err))
+        }
       }
     })()
     return () => { cancelled = true }
@@ -269,7 +276,10 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
         )}
       </div>
       {learning === null || sid === undefined || connectError ? (
-        <div style={centerStyle}>{connectError ? t('connectFailed') : t('loading')}</div>
+        <div style={centerStyle}>
+          {connectError ? t('connectFailed') : t('loading')}
+          {connectError && connectDetail !== null && <><br /><span style={{ fontSize: 12 }}>{connectDetail}</span></>}
+        </div>
       ) : workspace === null ? (
         <div style={centerStyle}>{t('noWorkspace')}</div>
       ) : (
@@ -549,7 +559,9 @@ function NotesPanel(props: NotesPanelProps) {
   const onUpdateRef = useRef<() => void>(() => {})
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      // tiptap 3 StarterKit already bundles link and underline; disable the
+      // built-ins so our configured copies don't register duplicate names.
+      StarterKit.configure({ link: false, underline: false }),
       Link.configure({ openOnClick: false }),
       Underline,
     ],
