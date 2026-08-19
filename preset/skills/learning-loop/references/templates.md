@@ -509,7 +509,7 @@ Standalone, double-click-to-open, vanilla JS, no external deps. Follow this skel
   function llApplyTheme(t) {
     var el = document.getElementById('ll-theme');
     if (!el) { el = document.createElement('style'); el.id = 'll-theme'; document.head.appendChild(el); }
-    el.textContent = ':root{' + t.css + '}';
+    el.textContent = ':root{' + t.css + '}html.' + (t.dark ? 'll-dark{color-scheme:dark}' : 'll-light{color-scheme:light}');
     var cl = document.documentElement.classList;
     cl.toggle('ll-dark', !!t.dark); cl.toggle('ll-light', !t.dark); cl.toggle('ll-glass', !!t.glass);
   }
@@ -950,7 +950,7 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
   function llApplyTheme(t) {
     var el = document.getElementById('ll-theme');
     if (!el) { el = document.createElement('style'); el.id = 'll-theme'; document.head.appendChild(el); }
-    el.textContent = ':root{' + t.css + '}';
+    el.textContent = ':root{' + t.css + '}html.' + (t.dark ? 'll-dark{color-scheme:dark}' : 'll-light{color-scheme:light}');
     var cl = document.documentElement.classList;
     cl.toggle('ll-dark', !!t.dark); cl.toggle('ll-light', !t.dark); cl.toggle('ll-glass', !!t.glass);
   }
@@ -1389,7 +1389,7 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
   function llApplyTheme(t) {
     var el = document.getElementById('ll-theme');
     if (!el) { el = document.createElement('style'); el.id = 'll-theme'; document.head.appendChild(el); }
-    el.textContent = ':root{' + t.css + '}';
+    el.textContent = ':root{' + t.css + '}html.' + (t.dark ? 'll-dark{color-scheme:dark}' : 'll-light{color-scheme:light}');
     var cl = document.documentElement.classList;
     cl.toggle('ll-dark', !!t.dark); cl.toggle('ll-light', !t.dark); cl.toggle('ll-glass', !!t.glass);
   }

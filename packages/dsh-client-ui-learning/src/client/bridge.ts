@@ -74,6 +74,97 @@ export interface ThemeSnapshot {
   readonly glass: boolean
 }
 
+/** dsh static palette per scheme, mirroring the skeletons' fallback values.
+ *  The floor {@link floorThemeSnapshot} fills UNRESOLVED tokens from here so
+ *  an injection can never leave a document unthemed — a snapshot racing a
+ *  theme flip (or a host quirk) then lands on the static palette for the
+ *  resolved scheme instead of a white canvas. Knobs (--dsh-aqua-*) are
+ *  never floored: only the glass layer consumes them, with own fallbacks. */
+const STATIC_TOKENS: Record<'light' | 'dark', Partial<Record<(typeof THEME_TOKENS)[number], string>>> = {
+  light: {
+    '--dsw-alias-bg-base': '#ffffff',
+    '--dsw-alias-bg-layer-1': '#ffffff',
+    '--dsw-alias-bg-layer-2': '#ffffff',
+    '--dsw-alias-bg-skeleton': 'rgba(0,0,0,0.04)',
+    '--dsw-alias-label-primary': 'rgb(15,17,21)',
+    '--dsw-alias-label-secondary': 'rgb(97,102,107)',
+    '--dsw-alias-label-tertiary': 'rgb(129,133,140)',
+    '--dsw-alias-label-primary-foreground': '#ffffff',
+    '--dsw-alias-border-l1': 'rgba(0,0,0,0.04)',
+    '--dsw-alias-border-l2': 'rgba(0,0,0,0.1)',
+    '--dsw-alias-border-l3': 'rgba(0,0,0,0.12)',
+    '--dsw-alias-border-l2-darkmode-thin': 'rgba(0,0,0,0.1)',
+    '--dsw-alias-button-primary-fill': 'rgb(15,17,21)',
+    '--dsw-alias-button-primary-hover': 'rgb(67,69,74)',
+    '--dsw-alias-interactive-bg-hover': 'rgba(38,49,72,0.06)',
+    '--dsw-alias-interactive-bg-active': 'rgba(38,49,72,0.1)',
+    '--dsw-alias-state-business-primary': 'rgb(65,118,230)',
+    '--dsw-alias-state-business-tertiary': 'rgb(228,237,253)',
+    '--dsw-alias-state-success-primary': 'rgb(34,197,94)',
+    '--dsw-alias-state-success-tertiary': 'rgb(230,250,237)',
+    '--dsw-alias-state-error-primary': 'rgb(236,19,19)',
+    '--dsw-alias-state-warn-primary': 'rgb(245,158,11)',
+    '--dsw-alias-state-warn-tertiary': 'rgb(254,245,231)',
+    '--dsw-alias-state-warn-label': 'rgb(221,134,41)',
+    '--dsw-alias-markdown-code-block': 'rgb(249,250,251)',
+    '--dsw-alias-markdown-inline-code': 'rgb(235,238,242)',
+    '--dsw-alias-scrollbar-bg-l1': 'rgb(229,229,229)',
+    '--dsw-alias-scrollbar-hover-l1': 'rgb(199,199,199)',
+    '--dsw-shadow-lv1': '0 2px 4px 0 rgba(0,0,0,0.05)',
+    '--dsw-shadow-lv2': '0 2px 8px 0 rgba(0,0,0,0.04)',
+  },
+  dark: {
+    '--dsw-alias-bg-base': 'rgb(21,21,23)',
+    '--dsw-alias-bg-layer-1': 'rgb(35,35,36)',
+    '--dsw-alias-bg-layer-2': 'rgb(44,44,46)',
+    '--dsw-alias-bg-skeleton': 'rgba(255,255,255,0.08)',
+    '--dsw-alias-label-primary': 'rgb(249,250,251)',
+    '--dsw-alias-label-secondary': 'rgb(207,211,214)',
+    '--dsw-alias-label-tertiary': 'rgb(173,178,184)',
+    '--dsw-alias-label-primary-foreground': 'rgb(15,17,21)',
+    '--dsw-alias-border-l1': 'rgba(255,255,255,0.06)',
+    '--dsw-alias-border-l2': 'rgba(255,255,255,0.12)',
+    '--dsw-alias-border-l3': 'rgba(255,255,255,0.16)',
+    '--dsw-alias-border-l2-darkmode-thin': 'rgba(255,255,255,0.12)',
+    '--dsw-alias-button-primary-fill': 'rgb(249,250,251)',
+    '--dsw-alias-button-primary-hover': 'rgb(235,238,242)',
+    '--dsw-alias-interactive-bg-hover': 'rgba(255,255,255,0.08)',
+    '--dsw-alias-interactive-bg-active': 'rgba(255,255,255,0.12)',
+    '--dsw-alias-state-business-primary': 'rgb(103,158,254)',
+    '--dsw-alias-state-business-tertiary': 'rgb(52,65,91)',
+    '--dsw-alias-state-success-primary': 'rgb(34,197,94)',
+    '--dsw-alias-state-success-tertiary': 'rgb(35,60,44)',
+    '--dsw-alias-state-error-primary': 'rgb(242,90,90)',
+    '--dsw-alias-state-warn-primary': 'rgb(245,158,11)',
+    '--dsw-alias-state-warn-tertiary': 'rgb(39,36,31)',
+    '--dsw-alias-state-warn-label': 'rgb(247,173,49)',
+    '--dsw-alias-markdown-code-block': 'rgb(27,27,28)',
+    '--dsw-alias-markdown-inline-code': 'rgb(44,44,46)',
+    '--dsw-alias-scrollbar-bg-l1': 'rgb(44,44,46)',
+    '--dsw-alias-scrollbar-hover-l1': 'rgb(64,64,66)',
+    '--dsw-shadow-lv1': '0 2px 4px 0 rgba(0,0,0,0.4)',
+    '--dsw-shadow-lv2': '0 2px 8px 0 rgba(0,0,0,0.3)',
+  },
+}
+
+/** Fill every unresolved token from the dsh static palette for the snapshot's
+ *  scheme. Captured values always win (the host palette, incl. theme-plugin
+ *  overrides, stays authoritative); only gaps are floored. Pure. */
+export function floorThemeSnapshot(theme: ThemeSnapshot): ThemeSnapshot {
+  const statics = theme.dark ? STATIC_TOKENS.dark : STATIC_TOKENS.light
+  const captured = new Set(
+    theme.css.split(';')
+      .map(declaration => declaration.slice(0, declaration.indexOf(':')).trim())
+      .filter(name => name !== ''),
+  )
+  const filled: string[] = []
+  for (const [token, value] of Object.entries(statics)) {
+    if (!captured.has(token)) filled.push(`${token}:${value};`)
+  }
+  if (filled.length === 0) return theme
+  return { ...theme, css: theme.css + filled.join('') }
+}
+
 /** Snapshot the tokens + dark/glass flags from the host page (DOM read only). */
 export function snapshotTheme(body: HTMLElement = document.body, root: HTMLElement = document.documentElement): ThemeSnapshot {
   const computed = getComputedStyle(body)
@@ -117,7 +208,10 @@ export function resolveDarkFlag(bodyAttribute: boolean, inlineColorScheme: strin
  * of the OS preference (html:not(.ll-light) keeps the file:// behavior).
  */
 export function injectTheme(html: string, theme: ThemeSnapshot): string {
-  const style = `<style id="ll-theme">:root{${theme.css}}</style>`
+  // The scheme rules make the UA canvas base + native chrome (scrollbars,
+  // form controls) follow the host theme even in documents whose own
+  // stylesheet predates the color-scheme rules (older generated files).
+  const style = `<style id="ll-theme">:root{${theme.css}}html.ll-dark{color-scheme:dark}html.ll-light{color-scheme:light}</style>`
   const modeClasses = [theme.dark ? 'll-dark' : 'll-light', ...(theme.glass ? ['ll-glass'] : [])].join(' ')
   if (/<html\b[^>]*>/i.test(html)) {
     let out = html.replace(/<html\b[^>]*>/i, match => {

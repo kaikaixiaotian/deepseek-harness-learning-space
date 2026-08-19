@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bridgeReply,
   dirOf,
+  floorThemeSnapshot,
   injectTheme,
   inlineRelativeIframes,
   isThemeAck,
@@ -30,6 +31,12 @@ describe('injectTheme', () => {
     expect(out).toContain('<style id="ll-theme">:root{--dsw-alias-bg-base:#0c121b;')
     expect(out).toMatch(/<html[^>]*class="[^"]*ll-dark/)
     expect(out.indexOf('<style id="ll-theme">')).toBeGreaterThan(out.indexOf('<head>'))
+  })
+  it('carries the color-scheme rules so the UA canvas base and native chrome follow the host scheme', () => {
+    const dark = injectTheme('<html><head></head><body></body></html>', DARK)
+    expect(dark).toContain('html.ll-dark{color-scheme:dark}')
+    const light = injectTheme('<html><head></head><body></body></html>', LIGHT)
+    expect(light).toContain('html.ll-light{color-scheme:light}')
   })
   it('appends to an existing html class instead of replacing it', () => {
     const html = '<html class="custom"><head></head><body></body></html>'
@@ -143,6 +150,36 @@ describe('resolveDarkFlag', () => {
     expect(resolveDarkFlag(false, '', 'dark light')).toBe(true)
     expect(resolveDarkFlag(false, '  ', 'light')).toBe(false)
     expect(resolveDarkFlag(false, '', '')).toBe(false)
+  })
+})
+
+describe('floorThemeSnapshot', () => {
+  it('floors an EMPTY dark snapshot to the dsh dark statics — an unthemed (white) document becomes impossible', () => {
+    const empty: ThemeSnapshot = { css: '', dark: true, glass: false }
+    const floored = floorThemeSnapshot(empty)
+    expect(floored.css).toContain('--dsw-alias-bg-base:rgb(21,21,23);')
+    expect(floored.css).toContain('--dsw-alias-label-primary:rgb(249,250,251);')
+    expect(floored.css).toContain('--dsw-alias-state-business-primary:rgb(103,158,254);')
+    expect(floored.dark).toBe(true)
+  })
+  it('floors an empty LIGHT snapshot to the light statics', () => {
+    const floored = floorThemeSnapshot({ css: '', dark: false, glass: false })
+    expect(floored.css).toContain('--dsw-alias-bg-base:#ffffff;')
+    expect(floored.css).toContain('--dsw-alias-label-primary:rgb(15,17,21);')
+  })
+  it('keeps captured values authoritative and only fills gaps', () => {
+    const partial: ThemeSnapshot = { css: '--dsw-alias-bg-base:#0C121B;', dark: true, glass: false }
+    const floored = floorThemeSnapshot(partial)
+    expect(floored.css.startsWith('--dsw-alias-bg-base:#0C121B;')).toBe(true)
+    expect(floored.css).not.toContain('--dsw-alias-bg-base:rgb(21,21,23)')
+    expect(floored.css).toContain('--dsw-alias-label-primary:rgb(249,250,251);')
+    // captured token appears exactly once
+    expect((floored.css.match(/--dsw-alias-bg-base:/g) ?? []).length).toBe(1)
+  })
+  it('never floors the glass knobs', () => {
+    const floored = floorThemeSnapshot({ css: '', dark: true, glass: true })
+    expect(floored.css).not.toContain('--dsh-aqua-blur')
+    expect(floored.css).not.toContain('--dsh-aqua-frost')
   })
 })
 

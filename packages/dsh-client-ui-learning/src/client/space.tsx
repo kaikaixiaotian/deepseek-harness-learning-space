@@ -20,7 +20,7 @@ import css from './space.module.css'
 import { chapterKeyOf, fileBaseName, isSafeNoteBranch, noteBranchesOf } from './classify.ts'
 import { closeLearningSpace, learningSpaceState, subscribeLearningSpace } from './store.ts'
 import { getLearningFace, subscribeLearningFace, unwrap, type LearningEntry, type LearningNamespaceFace, type LearningWorkspaceView } from './remote.ts'
-import { bridgeReply, dirOf, inlineRelativeIframes, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, postThemeUpdate, resolveRelative, snapshotTheme, type ThemeSnapshot } from './bridge.ts'
+import { bridgeReply, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, postThemeUpdate, resolveRelative, snapshotTheme, type ThemeSnapshot } from './bridge.ts'
 import type { NS } from './locales.ts'
 
 export interface LearningSpaceProps extends PropsLocale<typeof NS>, GlobalStandardProps {}
@@ -300,6 +300,8 @@ function Viewer(props: ViewerProps) {
   const objectUrlsRef = useRef<string[]>([])
   const themeNonceRef = useRef(0)
   const themeAckRef = useRef<((nonce: number) => void) | null>(null)
+  const lastDocHtmlRef = useRef<string | null>(null)
+  const lastPushRef = useRef<ThemeSnapshot | null>(null)
 
   // Re-enrich the srcDoc whenever the host theme changes. Two signals:
   //  - the marker attributes (data-ds-dark-theme on body, data-dsh-aqua on
@@ -363,8 +365,24 @@ function Viewer(props: ViewerProps) {
       const baseDir = dirOf(selected ?? '')
       // Snapshot BEFORE the (async) viz reads: the theme rides into the
       // inlined demo blobs too, so chapter docs open with pre-themed demos
-      // instead of white standalone-fallback boxes.
-      const theme = snapshotTheme()
+      // instead of white standalone-fallback boxes. A snapshot racing a theme
+      // flip can come back EMPTY (tokens mid-rewrite) — retry briefly, then
+      // floor unresolved tokens from the dsh static palette so the baked
+      // document is never unthemed (white canvas on a dark host).
+      let raw = snapshotTheme()
+      for (let attempt = 0; attempt < 2 && raw.css === ''; attempt++) {
+        await new Promise(resolve => { setTimeout(resolve, 120) })
+        if (cancelled) return
+        raw = snapshotTheme()
+      }
+      const theme = floorThemeSnapshot(raw)
+      // One-line theme trace: paste back from the browser console when a
+      // document renders with the wrong palette (filter: "[learning-space]").
+      console.info(
+        '[learning-space] doc theme:', theme.dark ? 'dark' : 'light', theme.glass ? 'glass' : 'solid',
+        'captured=' + (raw.css === '' ? '0' : String(raw.css.split(';').length - 1)),
+        'bg=' + (/--dsw-alias-bg-base:([^;]+)/.exec(theme.css)?.[1] ?? 'none'),
+      )
       let html = content.text
       let objectUrls: string[] = []
       try {
@@ -412,22 +430,32 @@ function Viewer(props: ViewerProps) {
     return () => { window.removeEventListener('message', handler) }
   }, [])
 
-  // Live theme channel, send side: on a host theme change push the fresh
-  // palette into the open document so it re-skins in place — a srcDoc rebuild
-  // would reload it and wipe in-progress quiz answers. When the current host
-  // theme already matches what the document was built with there is nothing
-  // to push (this guard also stops the legacy fallback from looping, since a
-  // rebuild bakes the new theme into docTheme). Documents without the
-  // listener never ack; after a short timeout fall back to one rebuild,
-  // which is the pre-listener behavior.
+  // Live theme channel, send side: push the fresh palette into the open
+  // document so it re-skins in place — a srcDoc rebuild would reload it and
+  // wipe in-progress quiz answers. Every document gets ONE unconditional
+  // push when it appears (the iframe's onLoad bumps themeTick, so the push
+  // lands after the template listener registered): even if the baked
+  // snapshot raced a theme flip, the load-time push re-syncs the palette.
+  // Later pushes fire only when the host theme actually changes (the
+  // lastPush guard also stops the legacy fallback from looping). Documents
+  // without the listener never ack; after a short timeout fall back to one
+  // rebuild, which is the pre-listener behavior.
   useEffect(() => {
     if (docHtml === null || docTheme === null) return
-    const theme = snapshotTheme()
-    if (theme.css === docTheme.css && theme.dark === docTheme.dark && theme.glass === docTheme.glass) return
+    if (docHtml !== lastDocHtmlRef.current) {
+      lastDocHtmlRef.current = docHtml
+      lastPushRef.current = null
+    }
+    const theme = floorThemeSnapshot(snapshotTheme())
+    if (lastPushRef.current !== null
+      && lastPushRef.current.css === theme.css
+      && lastPushRef.current.dark === theme.dark
+      && lastPushRef.current.glass === theme.glass) return
     const window_ = iframeRef.current?.contentWindow
     if (window_ === undefined || window_ === null) return
     const nonce = ++themeNonceRef.current
     postThemeUpdate(window_, theme, nonce)
+    lastPushRef.current = theme
     const timer = window.setTimeout(() => {
       if (themeNonceRef.current === nonce) setRebuildTick(value => value + 1)
     }, 400)
@@ -506,6 +534,10 @@ function Viewer(props: ViewerProps) {
                         className={css.viewerIframe}
                         srcDoc={docHtml}
                         title={selected}
+                        // load = the template's ll-theme listener is live:
+                        // bump so the send side pushes the current palette
+                        // once (heals any snapshot that raced a theme flip)
+                        onLoad={() => { setThemeTick(value => value + 1) }}
                       />
                     )
                 )

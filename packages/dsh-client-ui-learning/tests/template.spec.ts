@@ -117,11 +117,15 @@ describe('read-mode skeleton', () => {
     expect(readMode).toContain('per the workspace locale')
   })
   it('ships the live theme listener the host pushes into (apply in place, ack, forward to embedded demos)', () => {
-    for (const [name, doc] of [['read-mode', readMode], ['quiz-form', quizForm]] as const) {
+    for (const [name, doc] of [['read-mode', readMode], ['quiz-form', quizForm], ['viz', viz]] as const) {
       expect(doc, name).toContain('llApplyTheme')
       expect(doc, name).toContain("d.type !== 'll-theme'")
       expect(doc, name).toContain("type: 'll-theme-ack'")
       expect(doc, name).toContain("cl.toggle('ll-glass', !!t.glass)")
+      // live pushes keep the color-scheme rule (the UA canvas base follows
+      // the host scheme even after the listener rewrites #ll-theme)
+      expect(doc, name).toContain('ll-dark{color-scheme:dark}')
+      expect(doc, name).toContain('ll-light{color-scheme:light}')
     }
     // the read-mode chapter also forwards the theme into its viz iframes
     expect(readMode).toMatch(/frames\[i\]\.contentWindow\.postMessage\(d, '\*'\)/)
