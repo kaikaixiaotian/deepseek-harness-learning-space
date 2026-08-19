@@ -399,12 +399,6 @@
   flex: 1;
   width: 100%;
   border: none;
-  /* The doc canvas is transparent under glass themes (ll-glass) and the
-     embedded document may not declare color-scheme — engines then paint the
-     UA canvas WHITE behind it. Floor the iframe element with the host's own
-     base color (86% opaque: near-solid, a hint of depth) so the transparent
-     doc sits on the theme's canvas in every engine, never on UA white. */
-  background: color-mix(in srgb, var(--dsw-alias-bg-base, #ffffff) 86%, transparent);
 }
 
 .viewerPre {
