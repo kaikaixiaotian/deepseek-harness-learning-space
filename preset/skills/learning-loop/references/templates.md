@@ -481,100 +481,127 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
 <title>阶段< N > · 章节< XX > — <title></title>
 <!-- learning-loop skeleton: read-mode -->
 <style>
-  /* ===== shared design system (same vars as quiz-form) =====
-     Base colors CONSUME the dsh design tokens (--dsw-alias-*) with
-     standalone fallbacks: opened in a browser the fallbacks apply (dark via
-     prefers-color-scheme), opened inside the learning space the injected
-     ll-theme tokens win and the page follows the dsh host theme (and any
-     theme plugin). NEVER define --dsw-*/--dsh-* variables here — consume
-     them with fallbacks only (contamination guard). */
+  /* ===== dsh design system (same vars as quiz-form) =====
+     Base colors CONSUME the dsh design tokens (--dsw-alias-*) with the dsh
+     STATIC palette as fallback (not a third-party palette): opened in a
+     browser the fallbacks apply (dark via prefers-color-scheme), opened
+     inside the learning space the injected ll-theme tokens win and the page
+     follows the dsh host theme — including token-overriding theme plugins
+     (e.g. ui-aqua: the bridge snapshots the OVERRIDDEN values, so the deep-sea
+     palette arrives for free). The accent is the dsh business blue family
+     (state-business-*): --dsw-alias-brand-primary is monochrome black in dsh
+     light mode and must NOT drive selection/accent UI here. NEVER define
+     --dsw-*/--dsh-* variables here — consume with fallbacks only
+     (contamination guard). */
   :root{
-    --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#f7f8fa); --surface-2:var(--dsw-alias-bg-layer-2,#eef0f3);
-    --text:var(--dsw-alias-label-primary,#1f2328); --muted:var(--dsw-alias-label-secondary,#57606a); --faint:var(--dsw-alias-label-tertiary,#8b949e);
-    --accent:var(--dsw-alias-brand-primary,#4f46e5); --accent-soft:var(--dsw-alias-interactive-bg-hover,#eef2ff); --accent-border:var(--dsw-alias-border-l2,#c7d2fe);
-    --border:var(--dsw-alias-border-l1,#d9dde3); --hairline:var(--dsw-alias-border-l2,#eceef1); --code-bg:var(--dsw-alias-markdown-code-block,#f6f8fa);
-    --ok:var(--dsw-alias-state-success,#1a7f37); --err:var(--dsw-alias-state-error,#cf222e); --warn:var(--dsw-alias-state-warn-primary,#9a6700);
-    --obj-bg:var(--dsw-alias-interactive-bg-hover,#eef2ff);  --obj-bd:var(--dsw-alias-brand-primary,#4f46e5);
-    --kp-bg:#fffbeb;   --kp-bd:#fcd34d;  --kp-text:#92580a;
-    --pit-bg:#fff7ed;  --pit-bd:#fb923c; --pit-text:#9a3412;
-    --sum-bg:#f5f3ff;  --sum-bd:#a78bfa; --sum-text:#5b21b6;
-    --r-sm:8px; --r:12px; --r-lg:16px;
-    --shadow-sm:var(--dsw-shadow-lv1,0 1px 2px rgba(31,35,40,.06)); --shadow:var(--dsw-shadow-lv2,0 6px 20px rgba(31,35,40,.08));
+    --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#ffffff); --surface-2:var(--dsw-alias-bg-layer-2,#ffffff); --skeleton:var(--dsw-alias-bg-skeleton,rgba(0,0,0,0.04));
+    --text:var(--dsw-alias-label-primary,rgb(15,17,21)); --muted:var(--dsw-alias-label-secondary,rgb(97,102,107)); --faint:var(--dsw-alias-label-tertiary,rgb(129,133,140));
+    --accent:var(--dsw-alias-state-business-primary,rgb(65,118,230)); --accent-soft:var(--dsw-alias-state-business-tertiary,rgb(228,237,253)); --accent-border:var(--dsw-alias-border-l3,rgba(0,0,0,0.12));
+    --hover:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,0.06));
+    --border:var(--dsw-alias-border-l1,rgba(0,0,0,0.04)); --hairline:var(--dsw-alias-border-l2,rgba(0,0,0,0.1));
+    --obj-bg:var(--dsw-alias-state-business-tertiary,rgb(228,237,253));  --obj-bd:var(--dsw-alias-state-business-primary,rgb(65,118,230));
+    --kp-bg:var(--dsw-alias-state-warn-tertiary,rgb(254,245,231));  --kp-bd:var(--dsw-alias-state-warn-primary,rgb(245,158,11));  --kp-text:var(--dsw-alias-state-warn-label,rgb(221,134,41));
+    --ok:var(--dsw-alias-state-success-primary,rgb(34,197,94)); --err:var(--dsw-alias-state-error-primary,rgb(236,19,19)); --warn:var(--dsw-alias-state-warn-primary,rgb(245,158,11));
+    --code-bg:var(--dsw-alias-markdown-code-block,rgb(249,250,251)); --inline-code:var(--dsw-alias-markdown-inline-code,rgb(235,238,242));
+    /* corner language (dsh): surface 14 / control 10 / atom 8 */
+    --r-atom:8px; --r-ctrl:10px; --r-surface:14px; --r-sm:var(--r-atom); --r:var(--r-surface); --r-lg:var(--r-surface);
+    --ease:var(--ds-ease-in-out,cubic-bezier(0.4,0,0.2,1));
+    --shadow-sm:var(--dsw-shadow-lv1,0 2px 4px 0 rgba(0,0,0,0.05)); --shadow:var(--dsw-shadow-lv2,0 2px 8px 0 rgba(0,0,0,0.04));
     --maxw:760px;
-    --font-sans:var(--dsw-font-family,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif);
-    --font-mono:var(--ds-font-family-code,"SFMono-Regular",ui-monospace,"Cascadia Code",Consolas,monospace);
+    --font-sans:var(--dsw-font-family,-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif);
+    --font-mono:var(--ds-font-family-code,'SF Mono','JetBrains Mono',Consolas,'PingFang SC','Microsoft YaHei');
   }
-  /* dark palette. Standalone (file://) dark = the media query with plain
-     values (no dsh tokens exist there); inside the learning space the host
-     theme class applies instead — ll-dark only re-tints the semantic
-     callouts because the base vars already resolve from the injected
-     tokens, and ll-light opts out of the OS media query. Media queries
-     cannot be OR-ed with class selectors, hence the duplication. */
+  /* dark palette = the dsh dark STATIC values. Standalone (file://) dark is
+     the media query; inside the learning space the host marks <html> with
+     ll-dark / ll-light instead (the bridge also injects the resolved tokens,
+     which win over these plain values because the class rules only apply
+     where marked). Media queries cannot be OR-ed with class selectors,
+     hence the duplication. */
   @media (prefers-color-scheme:dark){html:not(.ll-light){
-    --bg:#0d1117; --surface:#161b22; --surface-2:#21262d;
-    --text:#e6edf3; --muted:#9198a1; --faint:#6e7681;
-    --accent:#818cf8; --accent-soft:#1e1b4b; --accent-border:#4338ca;
-    --border:#30363d; --hairline:#21262d; --code-bg:#161b22;
-    --obj-bg:#1e1b4b; --kp-bg:#3b2f10; --kp-bd:#a16207; --kp-text:#fde68a;
-    --pit-bg:#3b1d10; --pit-bd:#c2410c; --pit-text:#fed7aa;
-    --sum-bg:#2e1065; --sum-bd:#7c3aed; --sum-text:#ddd6fe;
-    --shadow:0 6px 24px rgba(0,0,0,.5);
+    --bg:rgb(21,21,23); --surface:rgb(35,35,36); --surface-2:rgb(44,44,46); --skeleton:rgba(255,255,255,0.08);
+    --text:rgb(249,250,251); --muted:rgb(207,211,214); --faint:rgb(173,178,184);
+    --accent:rgb(103,158,254); --accent-soft:rgb(52,65,91); --accent-border:rgba(255,255,255,0.16);
+    --hover:rgba(255,255,255,0.08);
+    --border:rgba(255,255,255,0.06); --hairline:rgba(255,255,255,0.12);
+    --obj-bg:rgb(52,65,91); --obj-bd:rgb(103,158,254);
+    --kp-bg:rgb(39,36,31); --kp-bd:rgb(245,158,11); --kp-text:rgb(247,173,49);
+    --ok:rgb(34,197,94); --err:rgb(242,90,90); --warn:rgb(245,158,11);
+    --code-bg:rgb(27,27,28); --inline-code:rgb(44,44,46);
   }}
   html.ll-dark{
-    --kp-bg:#3b2f10; --kp-bd:#a16207; --kp-text:#fde68a;
-    --pit-bg:#3b1d10; --pit-bd:#c2410c; --pit-text:#fed7aa;
-    --sum-bg:#2e1065; --sum-bd:#7c3aed; --sum-text:#ddd6fe;
+    --obj-bg:rgb(52,65,91); --obj-bd:rgb(103,158,254);
+    --kp-bg:rgb(39,36,31); --kp-bd:rgb(245,158,11); --kp-text:rgb(247,173,49);
+  }
+  /* glass theme (host marks <html> with ll-glass while a glass skin like
+     ui-aqua is active): the host cards under this page turn translucent, so
+     an opaque canvas would read as a solid slab glued onto glass. Turn the
+     canvas transparent, make the card fills low-alpha overlays, and let the
+     host's ambient/wallpaper show through from behind the card. */
+  html.ll-glass{
+    --bg:transparent;
+    --surface:color-mix(in srgb, rgb(34 38 47) 34%, transparent);
+    --surface-2:color-mix(in srgb, rgb(34 38 47) 44%, transparent);
+    --skeleton:color-mix(in srgb, rgb(34 38 47) 22%, transparent);
+    --code-bg:rgba(12,18,27,0.5); --inline-code:rgba(22,33,48,0.72);
+    --obj-bg:rgba(65,118,230,0.16); --kp-bg:rgba(245,158,11,0.12);
+    --hover:rgba(148,180,220,0.1);
   }
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
-  body{font-family:var(--font-sans); background:var(--bg); color:var(--text); line-height:1.75; margin:0; -webkit-font-smoothing:antialiased;}
+  body{font-family:var(--font-sans); background:var(--bg); color:var(--text); font:var(--dsw-font-markdown-base,16px/28px var(--font-sans)); margin:0; -webkit-font-smoothing:antialiased;}
   .page{display:flex; gap:48px; max-width:1080px; margin:0 auto; padding:40px 24px 96px;}
+
+  /* dsh-flavored scrollbars (iframe scroller included) */
+  html{scrollbar-width:thin; scrollbar-color:var(--dsw-alias-scrollbar-bg-l1,rgb(229,229,229)) transparent;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{border-radius:4px; background:var(--dsw-alias-scrollbar-bg-l1,rgb(229,229,229));}
 
   /* sticky table of contents (CSS-only) */
   aside.toc{position:sticky; top:40px; align-self:flex-start; width:188px; flex:0 0 188px; font-size:.82rem; color:var(--muted);}
   aside.toc .toc-title{font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); margin:0 0 10px 14px;}
   aside.toc nav{display:flex; flex-direction:column; gap:2px; border-left:1px solid var(--hairline);}
-  aside.toc a{display:block; padding:6px 14px; color:var(--muted); text-decoration:none; border-left:2px solid transparent; margin-left:-1px; transition:.15s;}
-  aside.toc a:hover{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft);}
+  aside.toc a{display:block; padding:6px 14px; color:var(--muted); text-decoration:none; border-left:2px solid transparent; margin-left:-1px; border-radius:0 var(--r-atom) var(--r-atom) 0; transition:background .1s var(--ease), color .1s var(--ease), border-color .1s var(--ease);}
+  aside.toc a:hover{color:var(--text); border-left-color:var(--accent); background:var(--hover);}
 
   article.content{max-width:var(--maxw); width:100%; min-width:0;}
-  .eyebrow{font-size:.78rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); margin-bottom:6px;}
-  h1{font-size:1.85rem; line-height:1.3; margin:0 0 12px; letter-spacing:-.01em;}
+  .eyebrow{display:inline-flex; align-items:center; font-size:.78rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); background:var(--accent-soft); border-radius:var(--r-atom); padding:3px 10px; margin-bottom:10px;}
+  h1{font:var(--dsw-font-markdown-h1,700 24px/34px var(--font-sans)); margin:0 0 12px; letter-spacing:-.01em;}
   .meta{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:28px;}
-  .meta .chip{font-size:.78rem; color:var(--muted); background:var(--surface); border:1px solid var(--border); padding:4px 10px; border-radius:999px;}
+  .meta .chip{font-size:.78rem; color:var(--muted); background:var(--skeleton); border:1px solid var(--border); padding:3px 10px; border-radius:999px;}
 
-  h2{font-size:1.3rem; margin:44px 0 16px; padding-bottom:8px; border-bottom:1px solid var(--hairline); display:flex; align-items:baseline; gap:12px;}
+  h2{font:var(--dsw-font-markdown-h3,700 20px/30px var(--font-sans)); margin:40px 0 14px; display:flex; align-items:baseline; gap:10px;}
   h2 .nh{color:var(--accent); font-size:.95rem; font-weight:700;}
-  h3{font-size:1.12rem; margin:32px 0 10px; color:var(--text);}
+  h3{font-size:1.12rem; margin:28px 0 10px; color:var(--text);}
   p{margin:0 0 14px;}
 
-  /* callout cards */
-  .callout{border-radius:var(--r); padding:16px 18px; margin:16px 0; border:1px solid var(--border); background:var(--surface); border-left:4px solid var(--accent);}
-  .callout .ct{font-weight:700; margin-bottom:6px;}
-  .objectives{background:var(--obj-bg); border-color:var(--obj-bd);} .objectives .ct{color:var(--obj-bd);}
+  /* callout cards: state-tertiary fill + primary left bar, dsh surface radius */
+  .callout{border-radius:var(--r-surface); padding:14px 16px; margin:16px 0; border:1px solid transparent; border-left:3px solid var(--accent); background:var(--surface);}
+  .callout .ct{font-weight:600; margin-bottom:6px; font-size:13px;}
+  .objectives{background:var(--obj-bg); border-left-color:var(--obj-bd);} .objectives .ct{color:var(--obj-bd);}
   .objectives ul,.summary ul{margin:6px 0 0; padding-left:20px;}
-  .kp{background:var(--kp-bg); border-color:var(--kp-bd);} .kp .ct{color:var(--kp-text);}
+  .kp{background:var(--kp-bg); border-left-color:var(--kp-bd);} .kp .ct{color:var(--kp-text);}
   .kp .hint{font-size:.82rem; color:var(--muted); margin:2px 0 10px;}
   .kp .kp-tags{display:flex; flex-wrap:wrap; gap:8px;}
-  .kp .kp-tags span{font-size:.82rem; background:var(--bg); border:1px solid var(--kp-bd); color:var(--kp-text); padding:4px 11px; border-radius:999px;}
-  .pitfall{background:var(--pit-bg); border-color:var(--pit-bd); margin:10px 0;} .pitfall .ct{color:var(--pit-text);}
-  .summary{background:var(--sum-bg); border-color:var(--sum-bd); margin-top:32px;} .summary .ct{color:var(--sum-text);}
+  .kp .kp-tags span{font-size:.82rem; background:var(--bg); background:color-mix(in srgb, var(--kp-bg) 60%, var(--bg)); border:1px solid var(--kp-bd); color:var(--kp-text); padding:3px 10px; border-radius:999px; font-family:var(--font-mono);}
+  .pitfall{background:color-mix(in srgb, var(--err) 10%, transparent); border-left-color:var(--err); margin:10px 0;} .pitfall .ct{color:var(--err);}
+  .summary{background:color-mix(in srgb, var(--ok) 10%, transparent); border-left-color:var(--ok); margin-top:32px;} .summary .ct{color:var(--ok);}
   .summary .self{font-size:.88rem; color:var(--muted); margin-top:10px;}
 
   /* the six-element list — turns the wall-of-text into a scannable definition list */
-  ol.elements{list-style:none; margin:10px 0 0; padding:0; border:1px solid var(--hairline); border-radius:var(--r); overflow:hidden;}
-  ol.elements > li{display:grid; grid-template-columns:148px 1fr; gap:6px 18px; padding:14px 18px; border-top:1px solid var(--hairline);}
+  ol.elements{list-style:none; margin:10px 0 0; padding:0; border:1px solid var(--border); border-radius:var(--r-surface); overflow:hidden; background:var(--surface);}
+  ol.elements > li{display:grid; grid-template-columns:148px 1fr; gap:6px 18px; padding:14px 18px; border-top:1px solid var(--border);}
   ol.elements > li:first-child{border-top:none;}
-  ol.elements .el-label{font-weight:700; font-size:.85rem; color:var(--accent); background:var(--accent-soft); border:1px solid var(--accent-border); padding:4px 10px; border-radius:var(--r-sm); height:fit-content; white-space:nowrap;}
+  ol.elements .el-label{font-weight:600; font-size:.85rem; color:var(--accent); background:var(--accent-soft); border:none; padding:4px 10px; border-radius:var(--r-atom); height:fit-content; white-space:nowrap;}
   ol.elements .el-body{min-width:0;} ol.elements .el-body p{margin:0 0 8px;} ol.elements .el-body p:last-child{margin-bottom:0;}
 
   /* element-body micro-formatting (anti wall-of-text): sub-lists & comparison tables */
   ol.elements .el-body ul, ol.elements .el-body ol{margin:6px 0 2px; padding-left:22px;}
   ol.elements .el-body ul li, ol.elements .el-body ol li{margin:5px 0;}
   ol.elements .el-body table{border-collapse:collapse; width:100%; margin:8px 0 2px; font-size:.92rem;}
-  ol.elements .el-body th, ol.elements .el-body td{border:1px solid var(--border); padding:7px 10px; text-align:left; vertical-align:top;}
-  ol.elements .el-body thead th{background:var(--surface-2); font-size:.85rem;}
-  ol.elements .el-body tbody tr:nth-child(even){background:var(--surface);}
+  ol.elements .el-body th, ol.elements .el-body td{border:1px solid var(--hairline); padding:7px 10px; text-align:left; vertical-align:top;}
+  ol.elements .el-body thead th{background:var(--skeleton); font-size:.85rem; font-weight:600;}
+  ol.elements .el-body tbody tr:nth-child(even){background:var(--skeleton);}
   /* ② slot: the embedded demo breaks out to the card's full width (label col 148px + 18px gap) */
   ol.elements .el-body figure.viz{margin:10px 0 4px -166px; width:calc(100% + 166px); max-width:calc(100% + 166px);}
   /* observe-points list under the ② demo */
@@ -583,15 +610,15 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
   ul.observe li::before{content:"👀"; position:absolute; left:0;}
 
   /* checkpoint (non-graded self-test) after each concept — details/summary, zero JS */
-  section.checkpoint{border:1px dashed var(--accent-border); background:var(--accent-soft); border-radius:var(--r); padding:14px 18px; margin:14px 0 28px;}
-  section.checkpoint .cp-title{font-weight:700; color:var(--accent); font-size:.92rem; margin-bottom:6px;}
-  section.checkpoint details{background:var(--bg); border:1px solid var(--hairline); border-radius:var(--r-sm); padding:8px 14px; margin:8px 0;}
-  section.checkpoint summary{cursor:pointer; font-weight:600; font-size:.95rem;}
-  section.checkpoint summary:hover{color:var(--accent);}
+  section.checkpoint{border:1px solid var(--border); background:var(--accent-soft); border-radius:var(--r-surface); padding:14px 18px; margin:14px 0 28px;}
+  section.checkpoint .cp-title{font-weight:600; color:var(--accent); font-size:.92rem; margin-bottom:6px;}
+  section.checkpoint details{background:var(--bg); background:color-mix(in srgb, var(--surface) 70%, transparent); border:1px solid var(--hairline); border-radius:var(--r-ctrl); padding:8px 14px; margin:8px 0;}
+  section.checkpoint summary{cursor:pointer; font-weight:600; font-size:.95rem; border-radius:var(--r-atom); transition:background .1s var(--ease);}
+  section.checkpoint summary:hover{color:var(--accent); background:var(--hover);}
   section.checkpoint details .ans{margin-top:8px; padding-top:8px; border-top:1px dashed var(--hairline); color:var(--muted); font-size:.9rem;}
 
   /* study-route pill under the meta chips */
-  .study-route{display:inline-block; font-size:.88rem; color:var(--muted); background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px 16px; margin:0 0 28px;}
+  .study-route{display:inline-block; font-size:.88rem; color:var(--muted); background:var(--skeleton); border:1px solid var(--border); border-radius:999px; padding:6px 16px; margin:0 0 28px;}
 
   /* assertion inventory inside the KP callout */
   .kp .kp-asserts{list-style:none; margin:10px 0 0; padding:10px 0 0 2px; border-top:1px dashed var(--kp-bd); font-size:.84rem; color:var(--kp-text);}
@@ -599,26 +626,26 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
   .kp .kp-asserts li strong{margin-right:4px;}
 
   /* embedded visualization component (loaded inline in the ② slot) */
-  figure.viz{margin:18px 0 6px; border:1px solid var(--border); border-radius:var(--r); overflow:hidden; box-shadow:var(--shadow-sm); background:var(--surface);}
+  figure.viz{margin:18px 0 6px; border:1px solid var(--hairline); border-radius:var(--r-surface); overflow:hidden; box-shadow:var(--shadow-sm); background:var(--surface);}
   figure.viz figcaption{display:flex; align-items:center; gap:8px; padding:10px 14px; background:var(--accent-soft); color:var(--accent); font-weight:600; font-size:.9rem;}
   figure.viz iframe{display:block; width:100%; height:460px; border:0; background:var(--bg);} /* 默认高度；页面脚本会按演示实际高度自适应，避免裁切 */
-  figure.viz .viz-open{display:block; padding:8px 14px; font-size:.78rem; color:var(--muted); border-top:1px solid var(--hairline); text-decoration:none; background:var(--bg);}
+  figure.viz .viz-open{display:block; padding:8px 14px; font-size:.78rem; color:var(--muted); border-top:1px solid var(--border); text-decoration:none; background:var(--bg);}
   figure.viz .viz-open:hover{color:var(--accent);}
   /* inside the learning space the link has no resolvable base URL (srcDoc)
      and the demo is already inlined — hide it there, keep it standalone */
   html.ll-dark .viz-open, html.ll-light .viz-open{display:none;}
 
-  pre{background:var(--code-bg); border:1px solid var(--hairline); border-radius:var(--r-sm); padding:14px 16px; overflow-x:auto; margin:12px 0;}
-  code{font-family:var(--font-mono); font-size:.88em;} pre code{font-size:.85rem;}
-  :not(pre)>code{background:var(--surface-2); padding:2px 6px; border-radius:5px;}
+  pre{background:var(--code-bg); border:1px solid var(--border); border-radius:var(--r-surface); padding:12px 14px; overflow-x:auto; margin:12px 0;}
+  code{font-family:var(--font-mono); font-size:.88em;} pre code{font-size:13px; line-height:22px;}
+  :not(pre)>code{background:var(--inline-code); padding:2px 6px; border-radius:5px;}
   .footer-note{margin-top:40px; padding-top:18px; border-top:1px solid var(--hairline); color:var(--muted); font-size:.92rem;}
 
   /* 补讲（超纲/补充教学）样式 */
   [id]{scroll-margin-top:24px;}
-  .backfill-badge{display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.04em; color:#fff; background:#f59e0b; padding:2px 8px; border-radius:999px; vertical-align:middle; margin-left:8px;}
+  .backfill-badge{display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.04em; color:var(--bg); background:var(--warn); padding:2px 8px; border-radius:999px; vertical-align:middle; margin-left:8px;}
   .backfill-meta{font-size:.82rem; color:var(--muted); margin:2px 0 10px;}
   aside.toc .toc-sub{font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); margin:16px 0 6px 14px;}
-  aside.toc a[href^="#backfill-"]::before{content:"＋ "; color:#f59e0b; font-weight:700;}
+  aside.toc a[href^="#backfill-"]::before{content:"＋ "; color:var(--warn); font-weight:700;}
   @media (max-width:900px){.page{display:block; padding:24px 16px 80px;} aside.toc{display:none;}}
 </style>
 </head>
@@ -833,73 +860,120 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
 <title>章节测验 — 阶段< N >·章节< XX ></title>
 <!-- learning-loop skeleton: quiz-form -->
 <style>
-  /* ===== shared design system (same vars as read-mode chapter) =====
-     Base colors CONSUME the dsh design tokens (--dsw-alias-*) with
-     standalone fallbacks — see the read-mode skeleton note. NEVER define
-     --dsw-*/--dsh-* variables here (contamination guard). */
+  /* ===== dsh design system (same vars as read-mode chapter) =====
+     Base colors CONSUME the dsh design tokens (--dsw-alias-*) with the dsh
+     STATIC palette as fallback — see the read-mode skeleton note. Inside the
+     learning space the injected ll-theme tokens win, including theme-plugin
+     overrides (ui-aqua snapshots arrive already re-tinted). The accent is
+     the dsh business blue family (state-business-*); --dsw-alias-brand-primary
+     is monochrome black in dsh light mode and must NOT drive selection UI.
+     NEVER define --dsw-*/--dsh-* variables here (contamination guard). */
   :root{
-    --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#f7f8fa); --surface-2:var(--dsw-alias-bg-layer-2,#eef0f3);
-    --text:var(--dsw-alias-label-primary,#1f2328); --muted:var(--dsw-alias-label-secondary,#57606a); --faint:var(--dsw-alias-label-tertiary,#8b949e);
-    --accent:var(--dsw-alias-brand-primary,#4f46e5); --accent-soft:var(--dsw-alias-interactive-bg-hover,#eef2ff); --accent-border:var(--dsw-alias-border-l2,#c7d2fe);
-    --border:var(--dsw-alias-border-l1,#d9dde3); --hairline:var(--dsw-alias-border-l2,#eceef1); --code-bg:var(--dsw-alias-markdown-code-block,#161b22);
-    --ok:var(--dsw-alias-state-success,#1a7f37); --err:var(--dsw-alias-state-error,#cf222e); --warn:var(--dsw-alias-state-warn-primary,#9a6700);
-    --r-sm:8px; --r:12px; --r-lg:16px; --shadow-sm:var(--dsw-shadow-lv1,0 1px 2px rgba(31,35,40,.06));
-    --font-sans:var(--dsw-font-family,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif);
-    --font-mono:var(--ds-font-family-code,"SFMono-Regular",ui-monospace,"Cascadia Code",Consolas,monospace);
+    --bg:var(--dsw-alias-bg-base,#ffffff); --surface:var(--dsw-alias-bg-layer-1,#ffffff); --skeleton:var(--dsw-alias-bg-skeleton,rgba(0,0,0,0.04));
+    --text:var(--dsw-alias-label-primary,rgb(15,17,21)); --muted:var(--dsw-alias-label-secondary,rgb(97,102,107)); --faint:var(--dsw-alias-label-tertiary,rgb(129,133,140));
+    --ink-fg:var(--dsw-alias-label-primary-foreground,#ffffff);
+    --accent:var(--dsw-alias-state-business-primary,rgb(65,118,230)); --accent-soft:var(--dsw-alias-state-business-tertiary,rgb(228,237,253));
+    --hover:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,0.06));
+    --border:var(--dsw-alias-border-l1,rgba(0,0,0,0.04)); --hairline:var(--dsw-alias-border-l2,rgba(0,0,0,0.1));
+    --primary-fill:var(--dsw-alias-button-primary-fill,rgb(15,17,21)); --primary-hover:var(--dsw-alias-button-primary-hover,rgb(67,69,74));
+    --ok:var(--dsw-alias-state-success-primary,rgb(34,197,94)); --ok-soft:var(--dsw-alias-state-success-tertiary,rgb(230,250,237));
+    --err:var(--dsw-alias-state-error-primary,rgb(236,19,19)); --err-soft:rgba(254,242,242,0.9);
+    --warn:var(--dsw-alias-state-warn-primary,rgb(245,158,11)); --warn-soft:var(--dsw-alias-state-warn-tertiary,rgb(254,245,231));
+    --code-bg:var(--dsw-alias-markdown-code-block,rgb(249,250,251)); --inline-code:var(--dsw-alias-markdown-inline-code,rgb(235,238,242));
+    /* corner language (dsh): surface 14 / control 10 / atom 8 */
+    --r-sm:8px; --r-ctrl:10px; --r:14px; --r-lg:14px;
+    --ease:var(--ds-ease-in-out,cubic-bezier(0.4,0,0.2,1));
+    --font-sans:var(--dsw-font-family,-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif);
+    --font-mono:var(--ds-font-family-code,'SF Mono','JetBrains Mono',Consolas,'PingFang SC','Microsoft YaHei');
+    --shadow-sm:var(--dsw-shadow-lv1,0 2px 4px 0 rgba(0,0,0,0.05));
   }
-  /* dark: standalone file:// follows the OS; inside the learning space the
-     host marks <html> with ll-dark / ll-light (same gating as read-mode). */
+  /* dark: standalone file:// follows the OS with the dsh dark static values;
+     inside the learning space the host marks <html> with ll-dark / ll-light
+     (same gating as read-mode) and injects the resolved tokens. */
   @media (prefers-color-scheme:dark){html:not(.ll-light){
-    --bg:#0d1117; --surface:#161b22; --surface-2:#21262d;
-    --text:#e6edf3; --muted:#9198a1; --faint:#6e7681;
-    --accent:#818cf8; --accent-soft:#1e1b4b; --accent-border:#4338ca;
-    --border:#30363d; --hairline:#21262d; --code-bg:#0d1117;
+    --bg:rgb(21,21,23); --surface:rgb(35,35,36); --skeleton:rgba(255,255,255,0.08);
+    --text:rgb(249,250,251); --muted:rgb(207,211,214); --faint:rgb(173,178,184);
+    --ink-fg:rgb(15,17,21);
+    --accent:rgb(103,158,254); --accent-soft:rgb(52,65,91);
+    --hover:rgba(255,255,255,0.08);
+    --border:rgba(255,255,255,0.06); --hairline:rgba(255,255,255,0.12);
+    --primary-fill:rgb(249,250,251); --primary-hover:rgb(235,238,242);
+    --ok:rgb(34,197,94); --ok-soft:rgb(35,60,44);
+    --err:rgb(242,90,90); --err-soft:rgba(87,12,12,0.5);
+    --warn:rgb(245,158,11); --warn-soft:rgb(39,36,31);
+    --code-bg:rgb(27,27,28); --inline-code:rgb(44,44,46);
   }}
   html.ll-dark{
-    --kp-bg:#3b2f10; --kp-bd:#a16207; --kp-text:#fde68a;
+    --ok-soft:rgb(35,60,44); --err-soft:rgba(87,12,12,0.5); --warn-soft:rgb(39,36,31);
+  }
+  /* glass theme (host marks <html> with ll-glass under a glass skin like
+     ui-aqua): transparent canvas + low-alpha overlays so the host card's
+     glass and the ambient behind it stay visible. */
+  html.ll-glass{
+    --bg:transparent;
+    --surface:color-mix(in srgb, rgb(34 38 47) 34%, transparent);
+    --skeleton:color-mix(in srgb, rgb(34 38 47) 22%, transparent);
+    --ink-fg:#0C121B;
+    --hover:rgba(148,180,220,0.1);
+    --primary-fill:#EAF2FC; --primary-hover:#DCE7F4;
+    --ok-soft:rgba(34,197,94,0.14); --err-soft:rgba(242,90,90,0.14); --warn-soft:rgba(245,158,11,0.14);
+    --code-bg:rgba(12,18,27,0.5); --inline-code:rgba(22,33,48,0.72);
+  }
+  html.ll-glass label.option, html.ll-glass input[type=text], html.ll-glass textarea{
+    background:color-mix(in srgb, rgb(255 255 255) 5%, transparent);
   }
   *{box-sizing:border-box;}
-  body{font-family:var(--font-sans); background:var(--bg); color:var(--text); line-height:1.7; max-width:860px; margin:0 auto; padding:40px 24px 140px; -webkit-font-smoothing:antialiased;}
-  h1{font-size:1.6rem; margin:0 0 16px; letter-spacing:-.01em; border-bottom:none; padding-bottom:0;}
-  h1::before{content:"章节测验"; display:block; font-size:.78rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); margin-bottom:6px;}
-  h2{font-size:1.05rem; margin:32px 0 14px; padding-bottom:8px; border-left:none; padding-left:0; border-bottom:1px solid var(--hairline); color:var(--muted);}
-  .info{background:var(--accent-soft); border:1px solid var(--accent-border); border-left:4px solid var(--accent); border-radius:var(--r); padding:14px 16px; margin:0 0 28px; font-size:.92rem; color:var(--text);}
-  .info strong{color:var(--accent);}
-  .info code{background:var(--surface-2); padding:1px 5px; border-radius:4px;}
-  fieldset.question{border:1px solid var(--border); border-radius:var(--r-lg); padding:16px 18px; margin:14px 0; background:var(--bg); box-shadow:var(--shadow-sm);}
-  fieldset.question legend{font-weight:700; font-size:1.02rem; color:var(--text); padding:0 4px;}
-  .qmeta{font-size:.78rem; color:var(--muted); margin:4px 0 12px;}
-  label.option{display:flex; align-items:center; gap:10px; padding:10px 12px; margin:6px 0; border:1px solid var(--hairline); border-radius:var(--r-sm); cursor:pointer; transition:.15s; background:var(--bg);}
-  label.option:hover{border-color:var(--accent-border); background:var(--accent-soft);}
+  html{scrollbar-width:thin; scrollbar-color:var(--dsw-alias-scrollbar-bg-l1,rgb(229,229,229)) transparent;}
+  ::-webkit-scrollbar{width:8px;} ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{border-radius:4px; background:var(--dsw-alias-scrollbar-bg-l1,rgb(229,229,229));}
+  body{font:var(--dsw-font-markdown-base,16px/28px var(--font-sans)); background:var(--bg); color:var(--text); max-width:860px; margin:0 auto; padding:40px 24px 140px; -webkit-font-smoothing:antialiased;}
+  h1{font:var(--dsw-font-markdown-h2,700 22px/32px var(--font-sans)); margin:0 0 12px; letter-spacing:-.01em;}
+  h1::before{content:"章节测验"; display:inline-flex; align-items:center; font-size:.78rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); background:var(--accent-soft); border-radius:8px; padding:3px 10px; margin-bottom:8px;}
+  h2{font-size:1.05rem; margin:32px 0 14px; padding-bottom:8px; border-bottom:1px solid var(--hairline); color:var(--muted);}
+  .info{background:var(--accent-soft); border:none; border-radius:var(--r); padding:12px 16px; margin:0 0 24px; font-size:.92rem; color:var(--muted);}
+  .info strong{color:var(--text);}
+  .info code{background:var(--inline-code); padding:1px 5px; border-radius:4px;}
+  /* question card: dsh surface = skeleton fill + l1 stroke + r14, no heavy shadow */
+  fieldset.question{border:1px solid var(--border); border-radius:var(--r); padding:16px 18px; margin:12px 0; background:var(--skeleton);}
+  fieldset.question legend{font-weight:600; font-size:1.02rem; color:var(--text); padding:0 4px;}
+  .qmeta{display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:.78rem; color:var(--muted); margin:2px 0 12px;}
+  .qmeta .pill{background:color-mix(in srgb, var(--skeleton) 50%, transparent); border:1px solid var(--border); border-radius:8px; padding:2px 8px; font-size:.72rem;}
+  label.option{display:flex; align-items:center; gap:10px; padding:9px 12px; margin:5px 0; border:1px solid transparent; border-radius:var(--r-ctrl); cursor:pointer; background:var(--bg); font-size:14px; line-height:22px; transition:background .1s var(--ease), box-shadow .1s var(--ease);}
+  label.option:hover{background:var(--hover);}
   label.option input{width:18px; height:18px; accent-color:var(--accent); cursor:pointer; margin:0; flex:0 0 18px;}
-  label.option:has(input:checked){border-color:var(--accent); background:var(--accent-soft);}
-  textarea{width:100%; min-height:110px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--bg); color:var(--text); font-family:inherit; font-size:.95rem; resize:vertical; line-height:1.6; transition:.15s;}
-  input[type=text]{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--bg); color:var(--text); font-family:inherit; font-size:.95rem; transition:.15s;}
-  textarea:focus, input[type=text]:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);}
-  .controls{position:sticky; bottom:0; background:linear-gradient(var(--bg) 55%, transparent); padding:18px 0; border-top:none; text-align:center; margin-top:24px;}
-  button{padding:12px 30px; margin:0 8px; border:none; border-radius:var(--r-sm); font-size:1rem; cursor:pointer; font-weight:600; font-family:inherit; transition:.15s;}
-  #submitBtn{background:var(--accent); color:#fff; box-shadow:var(--shadow-sm);}
-  #submitBtn:hover{filter:brightness(1.08);}
-  button[type=reset]{background:var(--surface); color:var(--muted); border:1px solid var(--border);}
-  button[type=reset]:hover{color:var(--text);}
-  #answerOutput{background:var(--code-bg); color:#9ca3af; border:1px solid var(--hairline); padding:14px 16px; border-radius:var(--r-sm); font-family:var(--font-mono); font-size:.82rem; white-space:pre-wrap; word-break:break-all; margin-top:16px;}
+  label.option:has(input:checked){background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent);}
+  textarea{width:100%; min-height:110px; padding:9px 12px; border:1px solid var(--hairline); border-radius:var(--r-ctrl); background:var(--bg); color:var(--text); font-family:inherit; font-size:.95rem; resize:vertical; line-height:1.6; transition:border-color .1s var(--ease);}
+  input[type=text]{width:100%; max-width:360px; padding:9px 12px; border:1px solid var(--hairline); border-radius:var(--r-ctrl); background:var(--bg); color:var(--text); font-family:inherit; font-size:.95rem; transition:border-color .1s var(--ease);}
+  textarea:focus, input[type=text]:focus{outline:none; border-color:var(--accent);}
+  /* controls: dsh capsule buttons; primary = the monochrome brand fill
+     (black in light / white in dark) like the host's own primary buttons */
+  .controls{position:sticky; bottom:0; background:linear-gradient(var(--bg) 55%, transparent); padding:18px 0 6px; border-top:none; text-align:center; margin-top:24px;}
+  html.ll-glass .controls{background:linear-gradient(color-mix(in srgb, rgb(12 18 27) 72%, transparent) 55%, transparent);}
+  button{height:40px; padding:0 22px; margin:0 6px; border:none; border-radius:20px; font-size:.95rem; line-height:22px; font-weight:500; cursor:pointer; font-family:inherit; transition:background .1s var(--ease);}
+  #submitBtn{background:var(--primary-fill); color:var(--ink-fg);}
+  #submitBtn:hover{background:var(--primary-hover);}
+  #submitBtn:disabled{opacity:.4; cursor:not-allowed;}
+  button[type=reset]{background:transparent; color:var(--muted); box-shadow:inset 0 0 0 1px var(--hairline);}
+  button[type=reset]:hover{background:var(--hover); color:var(--text);}
+  #answerOutput{background:var(--code-bg); color:var(--faint); border:1px solid var(--border); padding:12px 14px; border-radius:var(--r-sm); font-family:var(--font-mono); font-size:.8rem; white-space:pre-wrap; word-break:break-all; margin-top:14px;}
   /* 逐题批注位（每题 fieldset 内部，AI 批改后填充） — 机制与类名保持不变 */
-  .feedback{margin-top:12px; padding:10px 14px; border-radius:var(--r-sm); font-size:.88rem; display:none;}
+  .feedback{margin-top:12px; padding:10px 14px; border-radius:var(--r-ctrl); font-size:.88rem; line-height:20px; display:none;}
   .feedback.shown{display:block;}
-  .feedback.correct{background:color-mix(in srgb,var(--ok) 12%,transparent); border-left:4px solid var(--ok);}
-  .feedback.wrong{background:color-mix(in srgb,var(--err) 12%,transparent); border-left:4px solid var(--err);}
-  .feedback.partial{background:color-mix(in srgb,var(--warn) 14%,transparent); border-left:4px solid var(--warn);}
-  .feedback.out-of-scope{background:color-mix(in srgb,var(--accent) 12%,transparent); border-left:4px solid var(--accent);}
-  .feedback .verdict{font-weight:700;}
+  .feedback.correct{background:var(--ok-soft); border-left:3px solid var(--ok);}
+  .feedback.wrong{background:var(--err-soft); border-left:3px solid var(--err);}
+  .feedback.partial{background:var(--warn-soft); border-left:3px solid var(--warn);}
+  .feedback.out-of-scope{background:var(--accent-soft); border-left:3px solid var(--accent);}
+  .feedback .verdict{font-weight:600;}
   .feedback.correct .verdict{color:var(--ok);}
   .feedback.wrong .verdict{color:var(--err);}
   .feedback.partial .verdict{color:var(--warn);}
   .feedback.out-of-scope .verdict{color:var(--accent);}
   /* 总分汇总条（批改后显示在提交按钮下方） */
-  #gradingSummary{margin-top:20px; padding:16px 20px; border-radius:var(--r); background:var(--accent-soft); border:1px solid var(--accent-border); font-size:1.08rem; font-weight:700; color:var(--accent);}
+  #gradingSummary{margin-top:20px; padding:14px 18px; border-radius:var(--r); background:var(--accent-soft); color:var(--text); font-size:1.05rem; font-weight:600;}
+  #gradingSummary b{color:var(--accent);}
   /* 学习空间内交卷成功提示（standalone 场景保持隐藏） */
-  #submitNotice{margin-top:16px; padding:12px 16px; border-radius:var(--r); display:none; font-size:.95rem; font-weight:600; background:color-mix(in srgb,var(--ok) 14%,transparent); border:1px solid var(--ok); color:var(--ok);}
-  .src-tag{font-size:.78rem; color:var(--accent);}
+  #submitNotice{margin-top:14px; padding:11px 14px; border-radius:var(--r); display:none; font-size:.95rem; font-weight:500; background:var(--ok-soft); color:var(--ok);}
+  .src-tag{font-size:.78rem; color:var(--faint);}
 </style>
 </head>
 <body data-quiz="stageN-chXX-quiz">
@@ -1159,6 +1233,7 @@ Standalone, double-click-to-open, vanilla, no deps. User fills the form, clicks 
 ```
 
 **Quiz-form non-negotiables:**
+- **Style-token discipline (both skeletons):** copy the skeleton `<style>` verbatim — the `:root` layer consumes `--dsw-alias-*` tokens with the dsh static palette as fallback, and the accent is the `state-business-*` blue family. NEVER hardcode a palette color or invent accent variables (`--dsw-alias-brand-primary` is monochrome black in dsh light mode — do not bind selection/accent UI to it). `html.ll-glass` (glass themes like ui-aqua), `html.ll-dark` / `html.ll-light` (host marking) and the `prefers-color-scheme` fallback are all part of the skeleton — keep them intact.
 - `<body data-quiz="<slug>">` carries the slug used in the answers filename. **The slug MUST equal the html file's own stem** (e.g. `stage1-ch01-quiz.html` → `stage1-ch01-quiz`): the host writes `<stem>-answers.json` next to the file, and the page's restore JS reads `<slug>-answers.json` — a mismatch silently breaks restore.
 - Every question is a `<fieldset class="question" data-qid="qN" data-kp="..." data-assert="..." data-type="..." data-points="...">` — the AI reads these data-* attrs when grading (this replaces the inline `[考点: KP-x]` md tags). **`data-assert` carries the assertion IDs** (comma-separated when multiple, format `KP-2-A3`; prose displays it as `KP-2·A3`) — every listed assertion MUST exist in the chapter doc's 断言清单 (`kp-asserts`). A question whose assertion isn't listed there is 超纲 — rewrite it at generation time, don't wait for grading.
 - Radio/checkbox `name` MUST equal the qid (`q1`); text/textarea `id` MUST equal the qid (`q3`). The submit JS relies on this exact mapping.

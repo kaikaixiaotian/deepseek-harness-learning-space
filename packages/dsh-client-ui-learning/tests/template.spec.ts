@@ -54,10 +54,16 @@ function bracketsBalanced(code: string): boolean {
 describe('read-mode skeleton', () => {
   it('consumes dsw tokens with fallbacks and never defines them', () => {
     expect(readMode).toContain('--bg:var(--dsw-alias-bg-base,#ffffff)')
-    expect(readMode).toContain('--text:var(--dsw-alias-label-primary,#1f2328)')
-    expect(readMode).toContain('--accent:var(--dsw-alias-brand-primary,#4f46e5)')
+    expect(readMode).toContain('--text:var(--dsw-alias-label-primary,rgb(15,17,21))')
+    // the accent is the business blue family, NOT brand-primary (monochrome
+    // black in dsh light mode — it must not drive selection/accent UI)
+    expect(readMode).toContain('--accent:var(--dsw-alias-state-business-primary,rgb(65,118,230))')
+    expect(readMode).not.toContain('--accent:var(--dsw-alias-brand-primary')
     expect(readMode).not.toMatch(/:root\{[^}]*--dsw-[a-z-]+\s*:/)
     expect(readMode).not.toMatch(/--dsh-[a-z-]+\s*:/)
+  })
+  it('carries the glass-theme canvas layer the bridge flags', () => {
+    expect(readMode).toContain('html.ll-glass')
   })
   it('gates dark on the host classes the bridge injects', () => {
     expect(readMode).toContain('html:not(.ll-light)')

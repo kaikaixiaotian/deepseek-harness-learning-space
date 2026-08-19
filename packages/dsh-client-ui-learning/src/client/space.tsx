@@ -61,6 +61,9 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
   const [connectDetail, setConnectDetail] = useState<string | null>(null)
   const [workspace, setWorkspace] = useState<LearningWorkspaceView | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  // Notes card visibility: users who don't take notes collapse it and the
+  // viewer takes the freed width.
+  const [notesOpen, setNotesOpen] = useState(true)
 
   useEffect(() => {
     if (!space.open) return
@@ -101,6 +104,15 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
     return () => { cancelled = true }
   }, [space.open, space.focus?.path, learning, sid])
 
+  // While the space is open, mark <html> so the glass-theme adaptation can
+  // hide the dsh shell columns and reveal the real plugin environment
+  // (ambient / wallpaper / video) behind the now-transparent canvas.
+  useEffect(() => {
+    if (!space.open) return
+    document.documentElement.setAttribute('data-ls-open', '')
+    return () => { document.documentElement.removeAttribute('data-ls-open') }
+  }, [space.open])
+
   if (!space.open) return null
 
   return (
@@ -122,30 +134,38 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
         </div>
       ) : (
         <div className={css.frame} data-dsh-frame>
-          <TreePanel key={workspace.root} workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />
-          <div className={css.centerCol}>
-            <div className={css.header_card + ' ' + css.ls_card} data-dsh-surface>
-              <button type='button' className={css.button + ' ' + css.buttonGhost} onClick={closeLearningSpace}>‹ {t('back')}</button>
-              <span className={css.divider} />
-              <span className={css.title}>{t('title')}</span>
-              {workspaces !== null && workspaces.length > 1 && (
-                <select
-                  className={css.workspaceSelect}
-                  value={workspace?.root ?? ''}
-                  onChange={event => {
-                    const picked = workspaces.find(w => w.root === event.target.value) ?? null
-                    setWorkspace(picked)
-                    setSelected(null)
-                  }}
-                >
-                  {workspaces.map(w => <option key={w.root} value={w.root}>{w.title}</option>)}
-                </select>
-              )}
-              <span className={css.spacer} />
-            </div>
-            <Viewer workspace={workspace} learning={learning} sid={sid} selected={selected} t={t} />
+          <div className={css.header_card + ' ' + css.ls_card} data-dsh-surface>
+            <button type='button' className={css.button + ' ' + css.buttonGhost} onClick={closeLearningSpace}>‹ {t('back')}</button>
+            <span className={css.divider} />
+            <span className={css.title}>{t('title')}</span>
+            {workspaces !== null && workspaces.length > 1 && (
+              <select
+                className={css.workspaceSelect}
+                value={workspace?.root ?? ''}
+                onChange={event => {
+                  const picked = workspaces.find(w => w.root === event.target.value) ?? null
+                  setWorkspace(picked)
+                  setSelected(null)
+                }}
+              >
+                {workspaces.map(w => <option key={w.root} value={w.root}>{w.title}</option>)}
+              </select>
+            )}
+            <span className={css.spacer} />
+            <button
+              type='button'
+              title={t('notes')}
+              className={css.pill + ' ' + css.pillInteractive + (notesOpen ? ' ' + css.pillActive : '')}
+              onClick={() => { setNotesOpen(open => !open) }}
+            >
+              📖 {t('notes')}
+            </button>
           </div>
-          <NotesPanel workspace={workspace} learning={learning} sid={sid} selected={selected} t={t} />
+          <div className={css.body_row}>
+            <TreePanel key={workspace.root} workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />
+            <Viewer workspace={workspace} learning={learning} sid={sid} selected={selected} t={t} />
+            {notesOpen && <NotesPanel workspace={workspace} learning={learning} sid={sid} selected={selected} t={t} />}
+          </div>
         </div>
       )}
     </div>
@@ -277,11 +297,16 @@ function Viewer(props: ViewerProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const objectUrlsRef = useRef<string[]>([])
 
-  // Re-enrich the srcDoc when the host page flips light/dark.
+  // Re-enrich the srcDoc when the host page flips light/dark, or when a
+  // glass theme plugin (data-dsh-aqua on <html>) toggles — the snapshot
+  // carries the glass flag and the overridden token values either way.
   useEffect(() => {
-    const observer = new MutationObserver(() => { setThemeTick(value => value + 1) })
-    observer.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
-    return () => { observer.disconnect() }
+    const bump = (): void => { setThemeTick(value => value + 1) }
+    const bodyObserver = new MutationObserver(bump)
+    const rootObserver = new MutationObserver(bump)
+    bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
+    rootObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-dsh-aqua'] })
+    return () => { bodyObserver.disconnect(); rootObserver.disconnect() }
   }, [])
 
   useEffect(() => {

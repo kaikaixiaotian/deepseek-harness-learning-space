@@ -16,8 +16,9 @@ import {
   type ThemeSnapshot,
 } from '../src/client/bridge.ts'
 
-const LIGHT: ThemeSnapshot = { css: '--dsw-alias-bg-base:#ffffff;--dsw-alias-label-primary:#16181d;', dark: false }
-const DARK: ThemeSnapshot = { css: '--dsw-alias-bg-base:#0c121b;--dsw-alias-label-primary:#e6e9ef;', dark: true }
+const LIGHT: ThemeSnapshot = { css: '--dsw-alias-bg-base:#ffffff;--dsw-alias-label-primary:#16181d;', dark: false, glass: false }
+const DARK: ThemeSnapshot = { css: '--dsw-alias-bg-base:#0c121b;--dsw-alias-label-primary:#e6e9ef;', dark: true, glass: false }
+const GLASS: ThemeSnapshot = { css: '--dsw-alias-bg-base:#0c121b;--dsw-alias-state-business-primary:#679efe;', dark: true, glass: true }
 
 describe('injectTheme', () => {
   it('injects the token style into <head> and the ll-dark class when dark', () => {
@@ -36,6 +37,15 @@ describe('injectTheme', () => {
     const out = injectTheme('<html><head></head><body></body></html>', LIGHT)
     expect(out).toContain('id="ll-theme"')
     expect(out).toMatch(/<html[^>]*class="ll-light"/)
+  })
+  it('adds the ll-glass class alongside the scheme class for glass themes', () => {
+    const out = injectTheme('<html><head></head><body></body></html>', GLASS)
+    expect(out).toMatch(/<html[^>]*class="[^"]*ll-dark ll-glass"/)
+    const outFragment = injectTheme('<p>fragment</p>', GLASS)
+    expect(outFragment.startsWith('<style id="ll-theme">')).toBe(true)
+  })
+  it('never adds ll-glass when the glass flag is off', () => {
+    expect(injectTheme('<html><head></head><body></body></html>', DARK)).not.toContain('ll-glass')
   })
   it('prepends the style for fragment documents without html/head', () => {
     const out = injectTheme('<p>fragment</p>', LIGHT)

@@ -49,13 +49,24 @@
 /* - card system ---------------------------------------------------------- */
 
 .frame {
+  position: relative;
+  z-index: 1;
   display: flex;
+  flex-direction: column;
   gap: 12px;
   height: 100%;
   padding: 12px;
   box-sizing: border-box;
-  background: var(--dsw-alias-bg-base);
+  background: transparent;
   color: var(--dsw-alias-label-primary);
+}
+
+/* Below the full-width header card: the three content cards in one row. */
+.body_row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
 }
 
 /* Panel card (r20): stock recipe = l2-thin stroke + layer-1 fill + lv2 shadow,
@@ -80,24 +91,41 @@
   background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-1));
 }
 
-.centerCol {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 /* Full-frame state card for the loading / not-connected / no-workspace phases. */
 .state_card {
   flex: 1;
 }
 
-/* The overlay canvas is opaque over the app UI by default; a glass theme's
- * ambient scene lives behind everything, so let it show through and keep the
- * cards floating on it (passive attribute read — no JS branching). */
-:global([data-dsh-aqua]) .overlay {
+/* The overlay canvas is OPAQUE over the app UI in stock mode — hiding the
+ * dsh shell (sidebar / chat / composer) below is the overlay's own job.
+ * Under a glass theme the real environment (ambient glow, wallpaper, video,
+ * fluid — plugin-injected layers under the app) must show through, so
+ * instead of painting a fake copy we turn the canvas transparent and hide
+ * the shell columns for the overlay's lifetime: html[data-ls-open] is set by
+ * the overlay component while mounted (attribute-gated, no JS branching in
+ * the theme). The overlay lives in the frame's overlay layer, OUTSIDE the
+ * columns, so hiding them cannot hide it. NOTE: our own classes must never
+ * contain the 'centerCol'/'sidebarCol'/'detailsCol' substrings — the hide
+ * rules match those hashed shell class names. */
+:global(html[data-dsh-aqua][data-ls-open]) .overlay {
   background: transparent;
+}
+
+:global(html[data-dsh-aqua][data-ls-open]) [class*='sidebarCol'],
+:global(html[data-dsh-aqua][data-ls-open]) [class*='detailsCol'],
+:global(html[data-dsh-aqua][data-ls-open]) [class*='centerCol'],
+:global(html[data-dsh-aqua][data-ls-open]) [class*='handle'] {
+  visibility: hidden;
+}
+
+/* Our cards carry data-dsh-surface (the glass-recipe seam), which the theme's
+ * runtime stamper ALSO turns into spotlight targets — it then injects
+ * [data-dsh-aqua-glow] overlays into them that read as a stray vertical
+ * strip on hover. The space has no use for the cursor spotlight; suppress
+ * every injected glow while the overlay is open (they are pointer-events:
+ * none decorations, so removing them changes no interaction). */
+:global(html[data-dsh-aqua][data-ls-open]) [data-dsh-aqua-glow] {
+  display: none;
 }
 
 /* - header card ---------------------------------------------------------- */
@@ -207,6 +235,12 @@
 
 .pillInteractive:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pillActive {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-button-ghost-active-fill);
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-button-ghost-active-border);
 }
 
 .pillWarn {

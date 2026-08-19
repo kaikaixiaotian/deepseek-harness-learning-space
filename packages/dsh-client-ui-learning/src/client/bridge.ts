@@ -15,30 +15,62 @@
 
 // - theme bridge ---------------------------------------------------------------
 
-/** Tokens the generated templates consume (with fallbacks of their own). */
+/** Tokens the generated templates consume (with fallbacks of their own).
+ * Theme plugins override these on the host page through the dsh token
+ * override stack; the snapshot carries the OVERRIDDEN values, so a plugin
+ * palette (e.g. ui-aqua's deep-sea blues) reaches the iframe for free. */
 export const THEME_TOKENS = [
+  // canvas / surfaces
   '--dsw-alias-bg-base',
   '--dsw-alias-bg-layer-1',
   '--dsw-alias-bg-layer-2',
+  '--dsw-alias-bg-skeleton',
+  // ink
   '--dsw-alias-label-primary',
   '--dsw-alias-label-secondary',
   '--dsw-alias-label-tertiary',
+  '--dsw-alias-label-primary-foreground',
+  // strokes
   '--dsw-alias-border-l1',
   '--dsw-alias-border-l2',
+  '--dsw-alias-border-l3',
+  '--dsw-alias-border-l2-darkmode-thin',
+  // brand & interactive
   '--dsw-alias-brand-primary',
-  '--dsw-alias-state-success',
-  '--dsw-alias-state-error',
+  '--dsw-alias-button-primary-fill',
+  '--dsw-alias-button-primary-hover',
+  '--dsw-alias-interactive-bg-hover',
+  '--dsw-alias-interactive-bg-active',
+  // business / success / error / warn (the templates' accent system)
+  '--dsw-alias-state-business-primary',
+  '--dsw-alias-state-business-tertiary',
+  '--dsw-alias-state-success-primary',
+  '--dsw-alias-state-success-tertiary',
+  '--dsw-alias-state-error-primary',
   '--dsw-alias-state-warn-primary',
+  '--dsw-alias-state-warn-tertiary',
+  '--dsw-alias-state-warn-label',
+  // markdown surfaces
+  '--dsw-alias-markdown-code-block',
+  '--dsw-alias-markdown-inline-code',
+  // scrollbars (iframe scroller)
+  '--dsw-alias-scrollbar-bg-l1',
+  '--dsw-alias-scrollbar-hover-l1',
+  // elevation
   '--dsw-shadow-lv1',
+  '--dsw-shadow-lv2',
 ] as const
 
 export interface ThemeSnapshot {
   readonly css: string
   readonly dark: boolean
+  /** A glass skin (e.g. ui-aqua) is active on the host — templates flip to
+   *  a translucent canvas so the host card's glass and ambient stay visible. */
+  readonly glass: boolean
 }
 
-/** Snapshot the tokens + dark flag from the host page (DOM read only). */
-export function snapshotTheme(body: HTMLElement = document.body): ThemeSnapshot {
+/** Snapshot the tokens + dark/glass flags from the host page (DOM read only). */
+export function snapshotTheme(body: HTMLElement = document.body, root: HTMLElement = document.documentElement): ThemeSnapshot {
   const computed = getComputedStyle(body)
   const declarations: string[] = []
   for (const token of THEME_TOKENS) {
@@ -48,6 +80,7 @@ export function snapshotTheme(body: HTMLElement = document.body): ThemeSnapshot 
   return {
     css: declarations.join(''),
     dark: body.hasAttribute('data-ds-dark-theme'),
+    glass: root.hasAttribute('data-dsh-aqua'),
   }
 }
 
@@ -60,12 +93,12 @@ export function snapshotTheme(body: HTMLElement = document.body): ThemeSnapshot 
  */
 export function injectTheme(html: string, theme: ThemeSnapshot): string {
   const style = `<style id="ll-theme">:root{${theme.css}}</style>`
-  const modeClass = theme.dark ? 'll-dark' : 'll-light'
+  const modeClasses = [theme.dark ? 'll-dark' : 'll-light', ...(theme.glass ? ['ll-glass'] : [])].join(' ')
   if (/<html\b[^>]*>/i.test(html)) {
     let out = html.replace(/<html\b[^>]*>/i, match => {
       const withClass = /\bclass\s*=\s*(["'])(.*?)\1/i.test(match)
-        ? match.replace(/\bclass\s*=\s*(["'])(.*?)\1/i, (_m, quote: string, value: string) => `class=${quote}${value} ${modeClass}${quote}`)
-        : match.replace(/<html\b/i, `<html class="${modeClass}"`)
+        ? match.replace(/\bclass\s*=\s*(["'])(.*?)\1/i, (_m, quote: string, value: string) => `class=${quote}${value} ${modeClasses}${quote}`)
+        : match.replace(/<html\b/i, `<html class="${modeClasses}"`)
       return withClass
     })
     if (/<head\b[^>]*>/i.test(out)) {

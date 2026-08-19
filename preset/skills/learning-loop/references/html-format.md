@@ -37,6 +37,8 @@ Browsers cannot write to arbitrary disk paths from JS (security). Submission has
 
 The user then tells the AI "做好了". In-space, the answers file already sits next to the quiz — the AI simply Reads it (also when the user says nothing and the file exists). Standalone, the user points to the downloaded file or pastes the JSON.
 
+**Theme adaptation (the `ll-*` classes):** both skeletons consume `--dsw-alias-*` tokens with the dsh static palette as fallback, so they render correctly standalone (dark via `prefers-color-scheme`) and follow the host theme in-space. The learning space's theme bridge snapshots the host's RESOLVED tokens into the iframe on open and on every host theme flip, and marks `<html>` with: `ll-dark` / `ll-light` (scheme) and `ll-glass` (a glass skin like ui-aqua is active — the page canvas turns translucent so the host card's glass and the ambient behind it stay visible). These three classes are part of the canonical `<style>`; never strip them when generating.
+
 **answers.json schema:**
 ```json
 {
