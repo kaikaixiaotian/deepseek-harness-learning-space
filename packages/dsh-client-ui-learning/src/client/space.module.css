@@ -321,8 +321,10 @@
   padding-left: 26px;
 }
 
-.treeChildren .treeFile {
-  padding-left: 40px;
+/* one wrapper per nesting level — the compounding padding is the tree's
+   depth cue (sub-directories sit visibly deeper than their siblings) */
+.treeChildren {
+  padding-left: 12px;
 }
 
 .treeFileSelected {
@@ -517,6 +519,10 @@
 }
 
 .branchRail {
+  position: relative;
+  /* above any theme-plugin seam layer stamped into the card — the rail sits
+     at the card's right edge exactly where those overlays land */
+  z-index: 2;
   width: 52px;
   min-width: 52px;
   display: flex;
@@ -569,6 +575,30 @@
   outline: 1px solid var(--dsw-alias-border-l3);
 }
 
+/* invalid / duplicate branch name: visible instead of a silent no-op */
+.branchNewInputError {
+  outline: 1px solid var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* header-level branch-create button (second entry point beside the rail ＋) */
+.notesHeadBtn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  padding: 2px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.notesHeadBtn:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 /* - turn-tail learning cards ---------------------------------------------- */
 
 .cardsRow {
@@ -608,19 +638,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.learnExternal {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
-  text-decoration: underline;
-  padding: 0;
-}
-
-.learnExternal:hover {
-  color: var(--dsw-alias-label-secondary);
 }

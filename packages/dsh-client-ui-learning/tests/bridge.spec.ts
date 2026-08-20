@@ -10,6 +10,7 @@ import {
   bridgeReply,
   dirOf,
   floorThemeSnapshot,
+  injectLinkGuard,
   injectTheme,
   inlineRelativeIframes,
   isThemeAck,
@@ -17,6 +18,8 @@ import {
   postThemeUpdate,
   resolveDarkFlag,
   resolveRelative,
+  safeOpenTarget,
+  vizPlaceholder,
   type ThemeSnapshot,
 } from '../src/client/bridge.ts'
 
@@ -183,16 +186,53 @@ describe('floorThemeSnapshot', () => {
   })
 })
 
+describe('injectLinkGuard / vizPlaceholder / safeOpenTarget', () => {
+  it('injects the guard before </body> and appends for fragment documents', () => {
+    const out = injectLinkGuard('<html><body><p>x</p></body></html>')
+    expect(out.indexOf('ll-open')).toBeLessThan(out.indexOf('</body>'))
+    expect(injectLinkGuard('<p>fragment</p>')).toContain('ll-open')
+  })
+  it('guard lets fragments through and routes everything else (static source check)', () => {
+    const script = injectLinkGuard('<body></body>')
+    // fragment and scheme skips, preventDefault, and the postMessage route
+    expect(script).toContain("href.charAt(0) === '#'")
+    expect(script).toContain('ev.preventDefault()')
+    expect(script).toContain("type: 'll-open'")
+    // external http links open in a browser tab from inside the iframe
+    expect(script).toMatch(/https\?:.*window\.open/s)
+    // form submits are neutralized (Enter-in-input must not reload the srcDoc)
+    expect(script).toMatch(/addEventListener\('submit'.*preventDefault/s)
+  })
+  it('placeholder is a self-contained themed document with the escaped name', () => {
+    const doc = vizPlaceholder('<demo & "x">')
+    expect(doc).toContain('<!DOCTYPE html>')
+    expect(doc).toContain('&lt;demo &amp; &quot;x&quot;&gt;')
+    expect(doc).not.toContain('<demo')
+  })
+  it('safeOpenTarget strips fragment/query, rejects escapes, stays inside the root', () => {
+    const root = 'C:/w/react-学习'
+    expect(safeOpenTarget(root, 'C:/w/react-学习/章节', './viz/q.html#sec-1?x=2')).toBe('C:/w/react-学习/章节/viz/q.html')
+    expect(safeOpenTarget(root, 'C:/w/react-学习/章节', './a.html')).toBe('C:/w/react-学习/章节/a.html')
+    expect(safeOpenTarget(root, 'C:/w/react-学习/章节', '../outside.html')).toBeNull()
+    expect(safeOpenTarget(root, 'C:/w/react-学习/章节', 'https://example.com/x')).toBeNull()
+    expect(safeOpenTarget(root, 'C:/w/react-学习/章节', '#anchor-only')).toBeNull()
+  })
+})
+
 describe('parseBridgeMessage', () => {
   const makeEvent = (data: unknown, source: unknown): MessageEvent =>
     ({ data, source }) as unknown as MessageEvent
 
-  it('accepts ll-read and ll-submit from the owning iframe only', () => {
+  it('accepts ll-read, ll-submit and ll-open from the owning iframe only', () => {
     const iframe = { contentWindow: { mark: 1 } } as unknown as HTMLIFrameElement
     expect(parseBridgeMessage(makeEvent({ type: 'll-read', id: 1, path: './x-answers.json' }, iframe.contentWindow), iframe))
       .toEqual({ kind: 'll-read', id: 1, path: './x-answers.json' })
     expect(parseBridgeMessage(makeEvent({ type: 'll-submit', id: 2, quiz: 'q', answers: { q1: 'a' } }, iframe.contentWindow), iframe))
       .toEqual({ kind: 'll-submit', id: 2, quiz: 'q', answers: { q1: 'a' } })
+    expect(parseBridgeMessage(makeEvent({ type: 'll-open', id: 3, href: './quiz.html' }, iframe.contentWindow), iframe))
+      .toEqual({ kind: 'll-open', id: 3, href: './quiz.html', absolute: false })
+    expect(parseBridgeMessage(makeEvent({ type: 'll-open', id: 4, href: 'https://example.com' }, iframe.contentWindow), iframe))
+      .toEqual({ kind: 'll-open', id: 4, href: 'https://example.com', absolute: true })
     expect(parseBridgeMessage(makeEvent({ type: 'll-read', id: 3, path: 'x' }, { other: 2 }), iframe)).toBeNull()
     expect(parseBridgeMessage(makeEvent({ type: 'll-read', id: 3, path: 'x' }, iframe.contentWindow), null)).toBeNull()
   })
@@ -202,6 +242,7 @@ describe('parseBridgeMessage', () => {
     expect(parseBridgeMessage(makeEvent({ type: 'other', id: 1 }, iframe.contentWindow), iframe)).toBeNull()
     expect(parseBridgeMessage(makeEvent({ type: 'll-read', path: 'x' }, iframe.contentWindow), iframe)).toBeNull()
     expect(parseBridgeMessage(makeEvent({ type: 'll-submit', id: 1, quiz: 'q' }, iframe.contentWindow), iframe)).toBeNull()
+    expect(parseBridgeMessage(makeEvent({ type: 'll-open', id: 1 }, iframe.contentWindow), iframe)).toBeNull()
   })
 })
 

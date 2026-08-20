@@ -130,6 +130,34 @@ export function fileBaseName(path: string): string {
   return baseName(path)
 }
 
+/**
+ * Note key for any note-taking document: chapters keep the chapter key
+ * (existing note files stay put), while quizzes, stage totals, the baseline
+ * and the master plan each get their OWN note — a quiz is where mistakes and
+ * re-takes are recorded, distinct from the chapter's study notes. All keys
+ * are ASCII-safe so the host's chapter-key validation accepts them.
+ * Returns null when the file is not a notes-worthy html doc.
+ */
+export function noteKeyOf(path: string): string | null {
+  // Notes attach to study documents only — answers/grading json and wiki md
+  // selections must not derive junk keys.
+  if (!/\.html?$/i.test(path)) return null
+  let stem = stemOf(path).replace(/[_-]v\d+$/, '')
+  stem = stem.replace(/^阶段(\d+)-章(\d+)/, 'stage$1-ch$2')
+  // stage-level docs (总测验) carry no 章 segment — map the bare stage prefix too
+  stem = stem.replace(/^阶段(\d+)-/, 'stage$1-')
+  if (/基线/.test(stem) || /baseline/i.test(stem)) return 'baseline'
+  // zh quiz-suffix mapping before the quiz check (en names already carry -quiz)
+  stem = stem.replace(/-总测验$/, '-total-quiz').replace(/-测验$/, '-quiz')
+  const asciiSafe = /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stem)
+  if (/(?:^|[-_])(?:quiz|total-quiz)$/i.test(stem)) return asciiSafe ? stem : null
+  const chapter = chapterKeyOf(path)
+  if (chapter !== null) return chapter
+  // master-plan and other ascii-stem html docs get notes too; zh stems
+  // without a stage pattern (e.g. 总目录) have no ascii-safe key — no notes.
+  return asciiSafe ? stem : null
+}
+
 /** Note branch names for one chapter key, parsed from a notes-dir listing. */
 export function noteBranchesOf(chapterKey: string, fileNames: readonly string[]): string[] {
   const branches = new Set<string>()

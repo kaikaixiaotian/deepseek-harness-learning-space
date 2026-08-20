@@ -47,10 +47,9 @@ const KIND_LABEL: Record<LearningCardKind, CardLabelKey> = {
 
 export function LearningCards(
   props: PropsLocale<typeof NS>
-    & { matched: LearningCardsSelection }
-    & { openFile: (path: string) => void },
+    & { matched: LearningCardsSelection },
 ) {
-  const { matched, t, openFile } = props
+  const { matched, t } = props
   const items: LearningCardItem[] = []
   for (const key of ['chapter', 'quiz', 'baseline', 'plan'] as const) {
     const item = matched[key]
@@ -69,13 +68,6 @@ export function LearningCards(
             onClick={() => { openLearningSpace({ path: item.path, kind: item.kind }) }}
           >
             {t('cardOpen')}
-          </button>
-          <button
-            type='button'
-            className={css.learnExternal}
-            onClick={() => { openFile(item.path) }}
-          >
-            {t('cardExternal')}
           </button>
         </div>
       ))}

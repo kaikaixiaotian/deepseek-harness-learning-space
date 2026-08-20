@@ -17,10 +17,10 @@ import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Underline from '@tiptap/extension-underline'
 import css from './space.module.css'
-import { chapterKeyOf, fileBaseName, isSafeNoteBranch, noteBranchesOf } from './classify.ts'
+import { fileBaseName, isSafeNoteBranch, noteBranchesOf, noteKeyOf } from './classify.ts'
 import { closeLearningSpace, learningSpaceState, subscribeLearningSpace } from './store.ts'
 import { getLearningFace, subscribeLearningFace, unwrap, type LearningEntry, type LearningNamespaceFace, type LearningWorkspaceView } from './remote.ts'
-import { bridgeReply, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, postThemeUpdate, resolveRelative, snapshotTheme, type ThemeSnapshot } from './bridge.ts'
+import { bridgeReply, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectLinkGuard, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, postThemeUpdate, resolveRelative, snapshotTheme, vizPlaceholder, type ThemeSnapshot } from './bridge.ts'
 import type { NS } from './locales.ts'
 
 export interface LearningSpaceProps extends PropsLocale<typeof NS>, GlobalStandardProps {}
@@ -163,8 +163,8 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
           </div>
           <div className={css.body_row}>
             <TreePanel key={workspace.root} workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />
-            <Viewer workspace={workspace} learning={learning} sid={sid} selected={selected} t={t} />
-            {notesOpen && <NotesPanel workspace={workspace} learning={learning} sid={sid} selected={selected} t={t} />}
+            <Viewer workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />
+            {notesOpen && <NotesPanel workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />}
           </div>
         </div>
       )}
@@ -245,34 +245,41 @@ function TreeBranch(props: TreeBranchProps) {
         <span className={css.treeName}>{label}</span>
         <span className={css.treeCount}>{entries === null ? '' : String(entries.length)}</span>
       </button>
-      {expanded && error && <div className={css.hint}>{t('viewerFailed')}</div>}
-      {expanded && entries === null && !error && <div className={css.hint}>{t('loading')}</div>}
-      {expanded && entries !== null && entries.length === 0 && <div className={css.hint}>{t('treeEmpty')}</div>}
-      {expanded && entries !== null && entries.map(entry => entry.kind === 'dir'
-        ? (
-          <TreeBranch
-            key={entry.path}
-            label={entry.name}
-            path={entry.path}
-            workspace={workspace}
-            learning={learning}
-            sid={sid}
-            selected={selected}
-            onSelect={onSelect}
-            t={t}
-          />
-        )
-        : (
-          <button
-            key={entry.path}
-            type='button'
-            className={css.treeNode + ' ' + css.treeFile + (selected === entry.path ? ' ' + css.treeFileSelected : '')}
-            title={entry.path}
-            onClick={() => { onSelect(entry.path) }}
-          >
-            <span className={css.treeName}>{entry.name}</span>
-          </button>
-        ))}
+      {/* the wrapper carries the per-level indent: nested dirs compound it,
+          so sub-directories (e.g. 章节/演示) read as deeper levels instead of
+          sitting flat beside their siblings */}
+      {expanded && (
+        <div className={css.treeChildren}>
+          {error && <div className={css.hint}>{t('viewerFailed')}</div>}
+          {entries === null && !error && <div className={css.hint}>{t('loading')}</div>}
+          {entries !== null && entries.length === 0 && <div className={css.hint}>{t('treeEmpty')}</div>}
+          {entries !== null && entries.map(entry => entry.kind === 'dir'
+            ? (
+              <TreeBranch
+                key={entry.path}
+                label={entry.name}
+                path={entry.path}
+                workspace={workspace}
+                learning={learning}
+                sid={sid}
+                selected={selected}
+                onSelect={onSelect}
+                t={t}
+              />
+            )
+            : (
+              <button
+                key={entry.path}
+                type='button'
+                className={css.treeNode + ' ' + css.treeFile + (selected === entry.path ? ' ' + css.treeFileSelected : '')}
+                title={entry.path}
+                onClick={() => { onSelect(entry.path) }}
+              >
+                <span className={css.treeName}>{entry.name}</span>
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -284,11 +291,12 @@ interface ViewerProps {
   readonly learning: LearningNamespaceFace
   readonly sid: string
   readonly selected: string | null
+  readonly onSelect: (path: string) => void
   readonly t: LearningSpaceProps['t']
 }
 
 function Viewer(props: ViewerProps) {
-  const { workspace, learning, sid, selected, t } = props
+  const { workspace, learning, sid, selected, onSelect, t } = props
   const [content, setContent] = useState<{ text: string; truncated: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [docHtml, setDocHtml] = useState<string | null>(null)
@@ -392,7 +400,10 @@ function Viewer(props: ViewerProps) {
             const result = await unwrap(await learning.readFile(sid, workspace.root, abs), 'readFile')
             return result.content
           } catch {
-            return null
+            // Unreadable demo: a themed placeholder blob, NEVER the original
+            // relative src — under srcDoc it resolves against the app origin
+            // and paints the dsh SPA inside the chapter.
+            return vizPlaceholder(rel)
           }
         }, undefined, vizHtml => injectTheme(vizHtml, theme))
         html = injectTheme(inlined.html, theme)
@@ -403,6 +414,7 @@ function Viewer(props: ViewerProps) {
         // link) rather than rendering an unthemed page or an eternal spinner.
         html = injectTheme(content.text, theme)
       }
+      html = injectLinkGuard(html)
       if (cancelled) {
         for (const url of objectUrls) URL.revokeObjectURL(url)
         return
@@ -479,10 +491,47 @@ function Viewer(props: ViewerProps) {
       if (window_ === undefined || window_ === null) return
       void (async () => {
         if (request.kind === 'll-read') {
+          // Workspace gate for the iframe-supplied path, inline so every rule
+          // is visible at the use site: no scheme prefix, no parent-directory
+          // segments, and the resolved target must stay inside the workspace
+          // root (the host's contain() check backs this up server-side).
+          if (/^[a-z][a-z0-9+.-]*:/i.test(request.path) || request.path.split(/[/\\]/).includes('..')) {
+            window_.postMessage(bridgeReply(request, { ok: false, error: 'rejected path' }), '*')
+            return
+          }
+          const root = workspace.root.replace(/\\/g, '/').replace(/\/+$/, '')
           const abs = resolveRelative(dirOf(selected ?? ''), request.path)
+          if (!abs.startsWith(root + '/')) {
+            window_.postMessage(bridgeReply(request, { ok: false, error: 'outside the learning workspace' }), '*')
+            return
+          }
           try {
             const result = await unwrap(await learning.readFile(sid, workspace.root, abs), 'readFile')
             window_.postMessage(bridgeReply(request, { ok: true, content: result.content }), '*')
+          } catch (err) {
+            window_.postMessage(bridgeReply(request, { ok: false, error: err instanceof Error ? err.message : String(err) }), '*')
+          }
+          return
+        }
+        if (request.kind === 'll-open') {
+          // In-document link navigation, routed by the injected link guard
+          // (external http links never reach here — the guard opens them in
+          // a browser tab itself). Same inline workspace gate as ll-read.
+          const clean = (request.href.split('#')[0] ?? '').split('?')[0] ?? ''
+          if (clean === '' || /^[a-z][a-z0-9+.-]*:/i.test(clean) || clean.split(/[/\\]/).includes('..')) {
+            window_.postMessage(bridgeReply(request, { ok: false, error: 'rejected path' }), '*')
+            return
+          }
+          const openRoot = workspace.root.replace(/\\/g, '/').replace(/\/+$/, '')
+          const target = resolveRelative(dirOf(selected ?? ''), clean)
+          if (!target.startsWith(openRoot + '/')) {
+            window_.postMessage(bridgeReply(request, { ok: false, error: 'outside the learning workspace' }), '*')
+            return
+          }
+          try {
+            await unwrap(await learning.readFile(sid, workspace.root, target), 'readFile')
+            onSelect(target)
+            window_.postMessage(bridgeReply(request, { ok: true, path: target }), '*')
           } catch (err) {
             window_.postMessage(bridgeReply(request, { ok: false, error: err instanceof Error ? err.message : String(err) }), '*')
           }
@@ -557,11 +606,12 @@ interface NotesPanelProps extends ViewerProps {}
 
 function NotesPanel(props: NotesPanelProps) {
   const { workspace, learning, sid, selected, t } = props
-  const chapterKey = selected === null ? null : chapterKeyOf(selected)
+  const noteKey = selected === null ? null : noteKeyOf(selected)
   const [branch, setBranch] = useState('')
   const [branches, setBranches] = useState<string[]>([''])
   const [newBranch, setNewBranch] = useState('')
   const [creating, setCreating] = useState(false)
+  const [branchError, setBranchError] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const pendingRef = useRef<{ key: string; value: string } | null>(null)
@@ -588,10 +638,10 @@ function NotesPanel(props: NotesPanelProps) {
   const saveRef = useRef<(key: string, value: string) => void>(() => {})
   saveRef.current = (key: string, value: string): void => {
     if (learning === null) { setStatus('error'); return }
-    const [keyChapter, keyBranch] = key.split(KEY_SEP)
+    const [keyNote, keyBranch] = key.split(KEY_SEP)
     void (async () => {
       try {
-        await unwrap(await learning.writeNote(sid, workspace.root, keyChapter, value, keyBranch), 'writeNote')
+        await unwrap(await learning.writeNote(sid, workspace.root, keyNote, value, keyBranch), 'writeNote')
         if (activeKeyRef.current === key) setStatus('saved')
       } catch {
         if (activeKeyRef.current === key) setStatus('error')
@@ -613,7 +663,7 @@ function NotesPanel(props: NotesPanelProps) {
 
   // Flush pending edits of the previous chapter/branch, then load the new one.
   useEffect(() => {
-    const key = chapterKey === null ? null : chapterKey + KEY_SEP + branch
+    const key = noteKey === null ? null : noteKey + KEY_SEP + branch
     const pending = pendingRef.current
     if (pending !== null && activeKeyRef.current !== null && pending.key !== key) {
       pendingRef.current = null
@@ -628,13 +678,13 @@ function NotesPanel(props: NotesPanelProps) {
     }
     let cancelled = false
     void (async () => {
-      const keyChapter = key === null ? '' : key.split(KEY_SEP)[0]
-      const result = await learning.readNote(sid, workspace.root, keyChapter, branch === '' ? undefined : branch)
+      const keyNote = key === null ? '' : key.split(KEY_SEP)[0]
+      const result = await learning.readNote(sid, workspace.root, keyNote, branch === '' ? undefined : branch)
       if (cancelled) return
       editor?.commands.setContent(result.ok ? result.value.content : '', { emitUpdate: false })
     })()
     return () => { cancelled = true }
-  }, [chapterKey, branch, editor, learning, sid, workspace])
+  }, [noteKey, branch, editor, learning, sid, workspace])
 
   useEffect(() => () => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current)
@@ -644,7 +694,7 @@ function NotesPanel(props: NotesPanelProps) {
 
   // Enumerate this chapter's note branches from the notes dir listing.
   useEffect(() => {
-    if (chapterKey === null || learning === null) {
+    if (noteKey === null || learning === null) {
       setBranches([''])
       return
     }
@@ -654,20 +704,39 @@ function NotesPanel(props: NotesPanelProps) {
         const notesDir = workspace.root + '/' + workspace.dirs.notes
         const result = await unwrap(await learning.listDir(sid, workspace.root, notesDir), 'listDir')
         if (cancelled) return
-        setBranches(noteBranchesOf(chapterKey, result.entries.filter(entry => entry.kind === 'file').map(entry => entry.name)))
+        setBranches(noteBranchesOf(noteKey, result.entries.filter(entry => entry.kind === 'file').map(entry => entry.name)))
       } catch {
         if (!cancelled) setBranches([''])
       }
     })()
     return () => { cancelled = true }
-  }, [chapterKey, workspace, learning, sid])
+  }, [noteKey, workspace, learning, sid])
 
   // New chapters always start on the default branch.
-  useEffect(() => { setBranch('') }, [chapterKey])
+  useEffect(() => { setBranch('') }, [noteKey])
+
+  const branchInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Focus retry: autoFocus can be eaten when the iframe or another panel
+  // steals focus in the same frame — refocus once on the next tick so the
+  // branch input is actually editable (reported: ＋ click "did nothing").
+  useEffect(() => {
+    if (!creating) return
+    const timer = window.setTimeout(() => { branchInputRef.current?.focus() }, 0)
+    return () => { window.clearTimeout(timer) }
+  }, [creating])
 
   const createBranch = (): void => {
     const name = newBranch.trim()
-    if (!isSafeNoteBranch(name) || name === '' || branches.includes(name)) return
+    // Silent no-ops read as "the button is broken" — flag invalid names on
+    // the input instead (empty/unsafe/duplicate keep the editor open).
+    if (!isSafeNoteBranch(name) || name === '' || branches.includes(name)) {
+      setBranchError(true)
+      window.setTimeout(() => { setBranchError(false) }, 1600)
+      branchInputRef.current?.focus()
+      return
+    }
+    setBranchError(false)
     setBranches(current => [...current, name])
     setBranch(name)
     setNewBranch('')
@@ -696,9 +765,22 @@ function NotesPanel(props: NotesPanelProps) {
           <div className={css.notesHead}>
             <span className={css.notesTitle}>{t('notes')}</span>
             <span className={css.spacer} />
+            {/* Second entry point for branch creation: the rail ＋ sits at
+                the card's right edge, where theme-plugin seam layers may
+                interfere — a header button keeps the flow reachable. */}
+            {noteKey !== null && (
+              <button
+                type='button'
+                className={css.notesHeadBtn}
+                title={t('noteBranchNew')}
+                onClick={() => { setCreating(true) }}
+              >
+                ＋ {t('noteBranchNew')}
+              </button>
+            )}
             <span className={css.notesStatus + (status === 'saved' ? ' ' + css.notesStatusSaved : '')}>{statusLabel}</span>
           </div>
-          {chapterKey === null ? (
+          {noteKey === null ? (
             <div className={css.hint}>{t('notesEmpty')}</div>
           ) : (
             <>
@@ -733,7 +815,7 @@ function NotesPanel(props: NotesPanelProps) {
             </>
           )}
         </div>
-        {chapterKey !== null && (
+        {noteKey !== null && (
           <div className={css.branchRail}>
             {branches.map(name => (
               <button
@@ -749,8 +831,9 @@ function NotesPanel(props: NotesPanelProps) {
             {creating
               ? (
                 <input
+                  ref={branchInputRef}
                   autoFocus
-                  className={css.branchNewInput}
+                  className={css.branchNewInput + (branchError ? ' ' + css.branchNewInputError : '')}
                   value={newBranch}
                   placeholder={t('noteBranchNamePlaceholder')}
                   onChange={event => { setNewBranch(event.target.value) }}

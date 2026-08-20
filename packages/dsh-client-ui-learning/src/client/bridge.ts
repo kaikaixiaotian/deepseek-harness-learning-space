@@ -352,11 +352,76 @@ export async function inlineRelativeIframes(
   return { html: out, objectUrls }
 }
 
+// - in-document navigation guard ---------------------------------------------
+
+/**
+ * Inject a click guard into a srcDoc document: fragment links (#sec-x) keep
+ * their native scroll behavior, but any other navigation (relative chapter
+ * links, viz "open" links, form submits with an action) is prevented and
+ * posted to the host as an ll-open bridge message instead. Without this, a
+ * srcDoc iframe resolves relative URLs against the app origin and loads the
+ * dsh SPA over the document (the reported "middle panel becomes the dsh main
+ * UI" bug); Enter-in-text-input form submits would also reload the srcDoc
+ * and wipe in-progress quiz answers.
+ */
+export function injectLinkGuard(html: string): string {
+  const script = `<script>(function () {
+  document.addEventListener('click', function (ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (!href || href.charAt(0) === '#' || /^(blob:|data:|about:|javascript:|mailto:|tel:)/i.test(href)) return;
+    ev.preventDefault();
+    if (/^https?:/i.test(href)) { try { window.open(href, '_blank', 'noopener'); } catch (e) {} return; }
+    try { parent.postMessage({ type: 'll-open', id: Date.now(), href: href }, '*'); } catch (e) {}
+  }, true);
+  document.addEventListener('submit', function (ev) { ev.preventDefault(); }, true);
+})();</script>`
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, script + '</body>')
+  return html + script
+}
+
+/** Minimal placeholder shown in a demo slot whose file could not be read:
+ *  keeps the iframe a themed, self-contained document instead of a relative
+ *  src that would load the dsh SPA inside the chapter. */
+export function vizPlaceholder(name: string): string {
+  const safe = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>演示不可用</title></head>` +
+    `<body style="margin:0;font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;display:flex;align-items:center;justify-content:center;min-height:220px;padding:24px;text-align:center;color:var(--dsw-alias-label-secondary,rgb(97,102,107));background:var(--dsw-alias-bg-base,#ffffff);">` +
+    `⚠ 演示文件缺失或不可读：<br>${safe}</body></html>`
+}
+
+/**
+ * Validate an iframe-supplied path against the workspace: rejects empty,
+ * scheme-prefixed, and parent-directory-segment inputs outright, resolves
+ * against the document's directory, and requires the result to sit strictly
+ * inside the workspace root. Returns the absolute workspace path, or null.
+ */
+export function safeWorkspacePath(root: string, baseDir: string, userPath: string): string | null {
+  if (userPath === '' || /^[a-z][a-z0-9+.-]*:/i.test(userPath)) return null
+  if (userPath.split(/[/\\]/).includes('..')) return null
+  const abs = resolveRelative(baseDir, userPath)
+  const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '')
+  return abs.startsWith(normalizedRoot + '/') ? abs : null
+}
+
+/**
+ * Validate an in-document link target for in-viewer opening: strips
+ * fragment/query, then applies the same workspace-path rules as
+ * {@link safeWorkspacePath}. Returns the absolute workspace path, or null
+ * when the href is not a safe in-workspace target.
+ */
+export function safeOpenTarget(root: string, baseDir: string, href: string): string | null {
+  const clean = (href.split('#')[0] ?? '').split('?')[0] ?? ''
+  return safeWorkspacePath(root, baseDir, clean)
+}
+
 // - message bridge ----------------------------------------------------------------
 
 export type BridgeRequest =
   | { readonly kind: 'll-read'; readonly id: number; readonly path: string }
   | { readonly kind: 'll-submit'; readonly id: number; readonly quiz: string; readonly answers: unknown }
+  | { readonly kind: 'll-open'; readonly id: number; readonly href: string; readonly absolute: boolean }
 
 export interface BridgeReply {
   readonly type: string
@@ -383,6 +448,15 @@ export function parseBridgeMessage(event: MessageEvent, iframe: HTMLIFrameElemen
   }
   if (kind === 'll-submit' && typeof (data as { quiz?: unknown }).quiz === 'string' && 'answers' in (data as object)) {
     return { kind, id, quiz: (data as { quiz: string }).quiz, answers: (data as { answers: unknown }).answers }
+  }
+  // ll-open: in-document link navigation. Relative hrefs resolve against the
+  // document's directory; absolute http(s) hrefs open externally. srcDoc
+  // documents inherit the app origin as their base, so an UN-intercepted
+  // relative link loads the dsh SPA inside the iframe — the guard below
+  // exists to make that impossible.
+  if (kind === 'll-open' && typeof (data as { href?: unknown }).href === 'string') {
+    const href = (data as { href: string }).href
+    return { kind, id, href, absolute: /^https?:/i.test(href) }
   }
   return null
 }
