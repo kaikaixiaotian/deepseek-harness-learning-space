@@ -844,6 +844,8 @@ function NotesPanel(props: NotesPanelProps) {
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const [anchors, setAnchors] = useState<readonly NoteAnchor[]>([])
   const [viewMode, setViewMode] = useState<'edit' | 'map'>('edit')
+  /** Host-side reason behind the last 保存失败 (tooltip on the status). */
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const pendingRef = useRef<{ key: string; value: string } | null>(null)
   const timerRef = useRef<number | null>(null)
@@ -895,16 +897,31 @@ function NotesPanel(props: NotesPanelProps) {
     onUpdate: () => { onUpdateRef.current() },
   }, [])
 
-  const saveRef = useRef<(key: string, value: string) => void>(() => {})
-  saveRef.current = (key: string, value: string): void => {
+  const saveRef = useRef<(key: string, value: string, retry?: boolean) => void>(() => {})
+  saveRef.current = (key: string, value: string, retry = false): void => {
     if (learning === null) { setStatus('error'); return }
     const [keyNote, keyBranch] = key.split(KEY_SEP)
     void (async () => {
       try {
         await unwrap(await learning.writeNote(sid, workspace.root, keyNote, value, keyBranch), 'writeNote')
+        setSaveError(null)
         if (activeKeyRef.current === key) setStatus('saved')
-      } catch {
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setSaveError(message)
         if (activeKeyRef.current === key) setStatus('error')
+        // Note writes are tmp+rename; on Windows the rename fails WHILE
+        // another process holds the target (editor / sync / AV scanning the
+        // .tmp). One automatic retry shortly, and if it still fails keep the
+        // edit queued in pendingRef — the next edit, chapter-switch or
+        // unmount flush retries it, so nothing is dropped silently.
+        if (!retry) {
+          window.setTimeout(() => {
+            if (activeKeyRef.current === key) saveRef.current(key, value, true)
+          }, 1200)
+        } else if (activeKeyRef.current === key) {
+          pendingRef.current = { key, value }
+        }
       }
     })()
   }
@@ -943,6 +960,7 @@ function NotesPanel(props: NotesPanelProps) {
     if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null }
     activeKeyRef.current = key
     setStatus('idle')
+    setSaveError(null)
     setLoadedKey(null)
     setAnchors([])
     if (key === null) {
@@ -1114,7 +1132,12 @@ function NotesPanel(props: NotesPanelProps) {
                 {viewMode === 'map' ? '✎ ' + t('notesEditView') : '🗺 ' + t('notesMapView')}
               </button>
             )}
-            <span className={css.notesStatus + (status === 'saved' ? ' ' + css.notesStatusSaved : '')}>{statusLabel}</span>
+            <span
+              className={css.notesStatus + (status === 'saved' ? ' ' + css.notesStatusSaved : '')}
+              title={saveError ?? undefined}
+            >
+              {statusLabel}
+            </span>
           </div>
           {noteKey === null ? (
             <div className={css.hint}>{t('notesEmpty')}</div>
