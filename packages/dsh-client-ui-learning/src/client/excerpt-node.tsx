@@ -31,6 +31,9 @@ export interface ExcerptAttrs {
   /** Document path relative to the workspace root (portable across moves);
    * lets the breadcrumb reopen the source doc without a key→path search. */
   readonly docPath: string | null
+  /** Source-document index of the excerpted text block (paragraph-level
+   * connection target; null = fall back to the section heading endpoint). */
+  readonly blockIndex: number | null
 }
 
 export interface ExcerptCrumbTarget {
@@ -67,6 +70,7 @@ function ExcerptView(props: NodeViewProps) {
       data-ll-anchor={attrs.anchorId ?? undefined}
       data-ll-chapter={attrs.chapterKey ?? undefined}
       data-ll-section={attrs.sectionId ?? undefined}
+      data-ll-block={attrs.blockIndex === null ? undefined : String(attrs.blockIndex)}
     >
       {crumb !== '' && (
         <div className={css.excerptCrumbRow} contentEditable={false}>
@@ -106,6 +110,17 @@ export const ExcerptBlock = Node.create<ExcerptOptions>({
       kp: { default: null, ...dataAttr('data-ll-kp') },
       docTitle: { default: null, ...dataAttr('data-ll-title') },
       docPath: { default: null, ...dataAttr('data-ll-path') },
+      blockIndex: {
+        default: null,
+        parseHTML: element => {
+          const raw = element.getAttribute('data-ll-block')
+          return raw !== null && /^\d+$/.test(raw) ? Number(raw) : null
+        },
+        renderHTML: attrs => {
+          const value = attrs.blockIndex
+          return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? { 'data-ll-block': String(value) } : {}
+        },
+      },
     }
   },
 
@@ -126,7 +141,7 @@ export const ExcerptBlock = Node.create<ExcerptOptions>({
  * end of the note. Returns whether the insert transaction applied. */
 export function appendExcerpt(
   editor: Editor,
-  anchor: { chapterKey: string; sectionId: string | null; kp: string | null; docTitle: string; docPath: string | null },
+  anchor: { chapterKey: string; sectionId: string | null; kp: string | null; docTitle: string; docPath: string | null; blockIndex: number | null },
   quote: string,
 ): boolean {
   const text = quote.replace(/\s+/g, ' ').trim().slice(0, 2000)
@@ -142,6 +157,7 @@ export function appendExcerpt(
         kp: anchor.kp,
         docTitle: anchor.docTitle,
         docPath: anchor.docPath,
+        blockIndex: anchor.blockIndex,
       },
       content: [
         { type: 'paragraph', content: text === '' ? [] : [{ type: 'text', text }] },

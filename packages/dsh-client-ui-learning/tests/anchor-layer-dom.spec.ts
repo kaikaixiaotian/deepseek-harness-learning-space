@@ -42,9 +42,11 @@ const CHAPTER_HTML = `<!DOCTYPE html><html><head><title>ch</title></head><body>
 interface Posted {
   readonly type: string
   readonly sections?: ReadonlyArray<{ id: string; top: number; height: number; right: number; title: string | null }>
+  readonly blocks?: ReadonlyArray<{ i: number; top: number; right: number }>
   readonly sectionId?: string
   readonly id?: number
   readonly text?: string
+  readonly blockIndex?: number
 }
 
 /** Stub seat + the layer script, executed by jsdom's own script runner. */
@@ -121,6 +123,20 @@ describe('anchor layer in a real DOM (read-mode skeleton)', () => {
   it('resolves content between markers to the nearest preceding one', async () => {
     const { dom } = mountLayer()
     expect((await excerptFrom(dom, 'para-intro')).sectionId).toBe('sec-intro')
+  })
+
+  it('carries the excerpted block index and reports watched blocks', async () => {
+    const { dom } = mountLayer()
+    const w = dom.window as unknown as { __posted: Posted[]; __flush: () => void }
+    // content blocks in document order (toc excluded): obj-p, para-intro,
+    // kp-p, h3, li, para-core ← index 5, backfill-h3, backfill-p, practice-p…
+    const request = await excerptFrom(dom, 'para-core')
+    expect(request.blockIndex).toBe(5)
+    // the host names the anchors' blocks → their geometry rides the report
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: { type: 'll-blocks-watch', indexes: [5, 8] } }))
+    w.__flush()
+    const report = [...w.__posted].reverse().find(message => message.type === 'll-anchor-report')
+    expect(report?.blocks?.map(block => block.i)).toEqual([5, 8])
   })
 
   it('renders badges from ll-badges and reports locate clicks', () => {

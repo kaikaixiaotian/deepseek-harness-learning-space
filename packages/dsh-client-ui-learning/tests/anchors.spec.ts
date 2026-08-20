@@ -24,6 +24,7 @@ const A1: NoteAnchor = {
   kp: 'KP-2',
   docTitle: 'stage1-ch01-intro.html',
   docPath: 'chapters/stage1-ch01-intro.html',
+  blockIndex: 5,
   quote: '向量是有方向的量',
 }
 const A2: NoteAnchor = {
@@ -33,6 +34,7 @@ const A2: NoteAnchor = {
   kp: 'KP-1',
   docTitle: 'stage1-ch01-quiz.html',
   docPath: 'quizzes/stage1-ch01-quiz.html',
+  blockIndex: null,
   quote: 'quiz-level anchor',
 }
 
@@ -77,7 +79,7 @@ describe('collectAnchorsFromDoc', () => {
       { type: 'paragraph', content: [{ type: 'text', text: 'intro' }] },
       {
         type: 'excerpt',
-        attrs: { anchorId: 'ax1', chapterKey: 'stage1-ch01', sectionId: 'sec-core', kp: 'KP-2', docTitle: 't.html', docPath: 'chapters/t.html' },
+        attrs: { anchorId: 'ax1', chapterKey: 'stage1-ch01', sectionId: 'sec-core', kp: 'KP-2', docTitle: 't.html', docPath: 'chapters/t.html', blockIndex: 7 },
         content: [{ type: 'paragraph', content: [{ type: 'text', text: 'quoted ' }, { type: 'text', text: 'words' }] }],
       },
       {
@@ -97,7 +99,7 @@ describe('collectAnchorsFromDoc', () => {
   it('collects excerpt nodes in document order with attr + text extraction', () => {
     const anchors = collectAnchorsFromDoc(doc)
     expect(anchors.map(anchor => anchor.id)).toEqual(['ax1', 'ax2'])
-    expect(anchors[0]).toMatchObject({ chapterKey: 'stage1-ch01', sectionId: 'sec-core', kp: 'KP-2', docPath: 'chapters/t.html', quote: 'quoted words' })
+    expect(anchors[0]).toMatchObject({ chapterKey: 'stage1-ch01', sectionId: 'sec-core', kp: 'KP-2', docPath: 'chapters/t.html', blockIndex: 7, quote: 'quoted words' })
   })
   it('drops unsafe section ids down to document-level anchors and falls docTitle back to the key', () => {
     const second = collectAnchorsFromDoc(doc)[1]

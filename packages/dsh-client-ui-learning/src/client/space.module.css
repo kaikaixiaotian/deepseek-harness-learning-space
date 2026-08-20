@@ -641,13 +641,14 @@
 /* - P1 connection canvas (note↔chapter bezier overlay) ---------------------- */
 
 /* Spans the whole body row; the layer itself never takes pointer events,
-   each path re-enables them along its stroke only. */
+   each path re-enables them along its stroke only. Clipped: off-screen
+   lines are hidden by the redraw rule, this is the belt against spills. */
 .anchorLayer {
   position: absolute;
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  overflow: visible;
+  overflow: hidden;
 }
 
 /* Connection curves ride the business accent at FULL opacity (a highlight,

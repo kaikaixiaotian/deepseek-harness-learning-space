@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ANCHOR_REPORT_TYPE,
+  BLOCK_WATCH_TYPE,
   bridgeReply,
   clearQuizDraft,
   dirOf,
@@ -24,6 +25,7 @@ import {
   LOCATE_NOTICE_TYPE,
   parseBridgeMessage,
   parseBridgeNotice,
+  postBlockWatch,
   postSectionBadges,
   postSectionHighlight,
   postSectionJump,
@@ -313,15 +315,15 @@ describe('parseBridgeMessage', () => {
     expect(parseBridgeMessage(makeEvent({ type: 'll-submit', id: 1, quiz: 'q' }, iframe.contentWindow), iframe)).toBeNull()
     expect(parseBridgeMessage(makeEvent({ type: 'll-open', id: 1 }, iframe.contentWindow), iframe)).toBeNull()
   })
-  it('accepts ll-excerpt with a safe section id, and demotes unsafe ids to document level', () => {
+  it('accepts ll-excerpt with a safe section id and block index, demoting junk', () => {
     const iframe = { contentWindow: {} } as unknown as HTMLIFrameElement
-    expect(parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 5, text: 'quoted', sectionId: 'sec-core', kp: 'KP-2' }, iframe.contentWindow), iframe))
-      .toEqual({ kind: 'll-excerpt', id: 5, text: 'quoted', sectionId: 'sec-core', kp: 'KP-2' })
+    expect(parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 5, text: 'quoted', sectionId: 'sec-core', kp: 'KP-2', blockIndex: 12 }, iframe.contentWindow), iframe))
+      .toEqual({ kind: 'll-excerpt', id: 5, text: 'quoted', sectionId: 'sec-core', kp: 'KP-2', blockIndex: 12 })
     // quiz/baseline docs carry no sec-* skeleton → document-level anchor
     expect(parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 6, text: 'q' }, iframe.contentWindow), iframe))
-      .toEqual({ kind: 'll-excerpt', id: 6, text: 'q', sectionId: null, kp: null })
-    const hostile = parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 7, text: 'x', sectionId: '"><script>', kp: 42 }, iframe.contentWindow), iframe)
-    expect(hostile).toEqual({ kind: 'll-excerpt', id: 7, text: 'x', sectionId: null, kp: null })
+      .toEqual({ kind: 'll-excerpt', id: 6, text: 'q', sectionId: null, kp: null, blockIndex: null })
+    const hostile = parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 7, text: 'x', sectionId: '"><script>', kp: 42, blockIndex: -3 }, iframe.contentWindow), iframe)
+    expect(hostile).toEqual({ kind: 'll-excerpt', id: 7, text: 'x', sectionId: null, kp: null, blockIndex: null })
     expect(parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 8 }, iframe.contentWindow), iframe)).toBeNull()
   })
   it('accepts ll-draft-read with a sane docKey, rejecting empty/oversized keys', () => {
@@ -342,7 +344,10 @@ describe('parseBridgeNotice (anchor layer)', () => {
   it('accepts section reports from the owning iframe only, with shape-checked entries', () => {
     const sections = [{ id: 'sec-core', top: 12, height: 300, right: 640, title: '核心概念' }, { id: 'sec-pit', top: 400, height: 80, right: 640, title: null }]
     expect(parseBridgeNotice(makeEvent({ type: ANCHOR_REPORT_TYPE, sections }, iframe.contentWindow), iframe))
-      .toEqual({ kind: ANCHOR_REPORT_TYPE, sections })
+      .toEqual({ kind: ANCHOR_REPORT_TYPE, report: { sections, blocks: [] } })
+    const withBlocks = parseBridgeNotice(makeEvent({ type: ANCHOR_REPORT_TYPE, sections, blocks: [{ i: 5, top: 30, right: 600 }, { i: 8, top: 90, right: 600 }] }, iframe.contentWindow), iframe)
+    expect(withBlocks?.kind === ANCHOR_REPORT_TYPE ? withBlocks.report.blocks : null)
+      .toEqual([{ index: 5, top: 30, right: 600 }, { index: 8, top: 90, right: 600 }])
     expect(parseBridgeNotice(makeEvent({ type: ANCHOR_REPORT_TYPE, sections }, { other: 1 }), iframe)).toBeNull()
   })
   it('rejects malformed reports and unsafe ids', () => {
@@ -352,6 +357,10 @@ describe('parseBridgeNotice (anchor layer)', () => {
       { type: ANCHOR_REPORT_TYPE, sections: [{ id: '"><script>', top: 1, height: 1, right: 1 }] },
       { type: ANCHOR_REPORT_TYPE, sections: [{ id: 'sec-core', top: Number.NaN, height: 1, right: 1 }] },
       { type: 'other' },
+      { type: ANCHOR_REPORT_TYPE, sections: [], blocks: 'nope' },
+      { type: ANCHOR_REPORT_TYPE, sections: [], blocks: [{ i: -1, top: 1, right: 1 }] },
+      { type: ANCHOR_REPORT_TYPE, sections: [], blocks: [{ i: 1.5, top: 1, right: 1 }] },
+      { type: ANCHOR_REPORT_TYPE, sections: [], blocks: [{ i: 1, top: 'x', right: 1 }] },
     ]) {
       expect(parseBridgeNotice(makeEvent(bad, iframe.contentWindow), iframe)).toBeNull()
     }
@@ -395,10 +404,12 @@ describe('anchor layer injection + host commands', () => {
     // connection canvas stays empty
     expect(out).toContain('compareDocumentPosition')
     expect(out).toMatch(/m\.contains\(el\)/)
-    // badges / jump / highlight command listeners
+    // badges / jump / highlight / block-watch command listeners
     expect(out).toContain("d.type === 'll-badges'")
     expect(out).toContain("d.type === 'll-jump'")
     expect(out).toContain("d.type === 'll-highlight'")
+    expect(out).toContain("d.type === '" + BLOCK_WATCH_TYPE + "'")
+    expect(out).toContain('blockIndexAt')
     expect(out).toContain('scrollIntoView')
     // styles ride the dsw tokens exclusively (never a raw hex)
     const style = out.slice(out.indexOf('ll-anchor-style'), out.indexOf('</style>'))
@@ -411,10 +422,12 @@ describe('anchor layer injection + host commands', () => {
     postSectionJump(target, 'sec-core')
     postSectionBadges(target, { 'sec-core': 2 })
     postSectionHighlight(target, 'sec-intro', true)
+    postBlockWatch(target, [5, 8])
     expect(posted).toEqual([
       { data: { type: 'll-jump', sectionId: 'sec-core' }, origin: '*' },
       { data: { type: 'll-badges', counts: { 'sec-core': 2 } }, origin: '*' },
       { data: { type: 'll-highlight', sectionId: 'sec-intro', on: true }, origin: '*' },
+      { data: { type: 'll-blocks-watch', indexes: [5, 8] }, origin: '*' },
     ])
   })
 })

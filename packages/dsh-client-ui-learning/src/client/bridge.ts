@@ -525,6 +525,7 @@ export const LOCATE_NOTICE_TYPE = 'll-locate'
 export const JUMP_COMMAND_TYPE = 'll-jump'
 export const BADGES_COMMAND_TYPE = 'll-badges'
 export const HIGHLIGHT_COMMAND_TYPE = 'll-highlight'
+export const BLOCK_WATCH_TYPE = 'll-blocks-watch'
 
 /** One section of the open document as reported by the anchor layer
  * (viewport-relative coords inside the iframe; `right` is the element's right
@@ -535,6 +536,20 @@ export interface SectionReportEntry {
   readonly height: number
   readonly right: number
   readonly title: string | null
+}
+
+/** One watched text block (paragraph-level anchor target): the host names
+ * the block indexes it cares about (from note anchors), the layer reports
+ * their live geometry every frame alongside the sections. */
+export interface BlockReportEntry {
+  readonly index: number
+  readonly top: number
+  readonly right: number
+}
+
+export interface AnchorReport {
+  readonly sections: readonly SectionReportEntry[]
+  readonly blocks: readonly BlockReportEntry[]
 }
 
 /** Bubble labels — injected as literals because the iframe cannot reach the
@@ -575,6 +590,41 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
   if (window.parent === window) return;
   var LABELS = ${labelsJson};
   var SECTION_SEL = '[id^="sec-"],[id^="backfill-"]';
+  // paragraph-level anchor targets: the connection precision unit ("行")
+  var BLOCK_SEL = 'p,li,h3,h4,pre,blockquote,td,dd,dt';
+  var blockCache = null;
+  function allBlocks() {
+    if (blockCache) return blockCache;
+    var els = document.querySelectorAll(BLOCK_SEL);
+    var out = [];
+    for (var i = 0; i < els.length; i++) {
+      // the TOC aside/nav is navigation, not content — never an anchor target
+      if (els[i].closest && els[i].closest('aside,nav')) continue;
+      out.push(els[i]);
+    }
+    blockCache = out;
+    return out;
+  }
+  // watched blocks: the host names the indexes (from note anchors), the
+  // report stream then carries their live geometry — documents are static,
+  // so an index resolved at excerpt time keeps pointing at the same line.
+  var watched = null;
+  function resolveWatched(indexes) {
+    var all = allBlocks();
+    watched = [];
+    for (var i = 0; i < indexes.length; i++) {
+      var idx = indexes[i];
+      if (idx >= 0 && idx < all.length) watched.push({ i: idx, el: all[idx] });
+    }
+  }
+  function blockIndexAt(node) {
+    var el = elementOf(node);
+    var block = el && el.closest ? el.closest(BLOCK_SEL) : null;
+    if (!block) return null;
+    var all = allBlocks();
+    for (var i = 0; i < all.length; i++) if (all[i] === block) return i;
+    return null;
+  }
   var msgSeq = 0;
   function post(data) { try { parent.postMessage(data, '*'); } catch (e) {} }
 
@@ -599,10 +649,18 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
       if (r.height <= 0) continue;
       sections.push({ id: el.id, top: Math.round(r.top), height: Math.round(r.height), right: Math.round(r.right), title: titleOf(el) || null });
     }
-    var json = JSON.stringify(sections);
+    var blocks = [];
+    if (watched) {
+      for (var j = 0; j < watched.length; j++) {
+        var rb = watched[j].el.getBoundingClientRect();
+        if (rb.height <= 0) continue;
+        blocks.push({ i: watched[j].i, top: Math.round(rb.top), right: Math.round(rb.right) });
+      }
+    }
+    var json = JSON.stringify({ s: sections, b: blocks });
     if (json === lastReport) return;
     lastReport = json;
-    post({ type: '${ANCHOR_REPORT_TYPE}', sections: sections });
+    post({ type: '${ANCHOR_REPORT_TYPE}', sections: sections, blocks: blocks });
   }
   var raf = 0;
   function scheduleReport() {
@@ -684,7 +742,7 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
     var rect = range.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return;
     var b = ensureBubble();
-    pending = { text: text, sectionId: sectionIdOf(range.startContainer), kp: kpOf(range.startContainer) };
+    pending = { text: text, sectionId: sectionIdOf(range.startContainer), kp: kpOf(range.startContainer), blockIndex: blockIndexAt(range.startContainer) };
     b.className = 'll-excerpt-bubble';
     b.textContent = LABELS.excerpt;
     var left = Math.max(8, Math.min(rect.left + rect.width / 2 - 56, window.innerWidth - 120));
@@ -700,7 +758,7 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
 
   function doExcerpt() {
     if (!pending || !bubble) return;
-    var payload = { type: '${EXCERPT_REQUEST_TYPE}', id: ++msgSeq, text: pending.text.slice(0, 2000), sectionId: pending.sectionId, kp: pending.kp };
+    var payload = { type: '${EXCERPT_REQUEST_TYPE}', id: ++msgSeq, text: pending.text.slice(0, 2000), sectionId: pending.sectionId, kp: pending.kp, blockIndex: pending.blockIndex };
     var b = bubble;
     var replied = false;
     var onReply = function (ev) {
@@ -752,6 +810,16 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
   window.addEventListener('message', function (ev) {
     var d = ev && ev.data;
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
+    if (d.type === '${BLOCK_WATCH_TYPE}' && d.indexes && typeof d.indexes === 'object') {
+      var list = [];
+      for (var q = 0; q < d.indexes.length; q++) {
+        if (typeof d.indexes[q] === 'number' && d.indexes[q] >= 0) list.push(d.indexes[q]);
+      }
+      blockCache = null;
+      resolveWatched(list.slice(0, 200));
+      scheduleReport();
+      return;
+    }
     if (d.type === '${BADGES_COMMAND_TYPE}' && d.counts && typeof d.counts === 'object') { renderBadges(d.counts); return; }
     if (d.type === '${JUMP_COMMAND_TYPE}' && typeof d.sectionId === 'string') {
       var target = document.getElementById(d.sectionId);
@@ -946,13 +1014,13 @@ export type BridgeRequest =
   | { readonly kind: 'll-read'; readonly id: number; readonly path: string }
   | { readonly kind: 'll-submit'; readonly id: number; readonly quiz: string; readonly answers: unknown }
   | { readonly kind: 'll-open'; readonly id: number; readonly href: string; readonly absolute: boolean }
-  | { readonly kind: 'll-excerpt'; readonly id: number; readonly text: string; readonly sectionId: string | null; readonly kp: string | null }
+  | { readonly kind: 'll-excerpt'; readonly id: number; readonly text: string; readonly sectionId: string | null; readonly kp: string | null; readonly blockIndex: number | null }
   | { readonly kind: 'll-draft-read'; readonly id: number; readonly docKey: string }
 
 /** Fire-and-forget notices from the anchor layer (no reply, no id — the
  * report stream is high-frequency, the locate click needs no ack). */
 export type BridgeNotice =
-  | { readonly kind: 'll-anchor-report'; readonly sections: readonly SectionReportEntry[] }
+  | { readonly kind: 'll-anchor-report'; readonly report: AnchorReport }
   | { readonly kind: 'll-locate'; readonly sectionId: string }
   | { readonly kind: 'll-draft-save'; readonly docKey: string; readonly answers: unknown }
   | { readonly kind: 'll-draft-clear'; readonly docKey: string }
@@ -993,17 +1061,19 @@ export function parseBridgeMessage(event: MessageEvent, iframe: HTMLIFrameElemen
     return { kind, id, href, absolute: /^https?:/i.test(href) }
   }
   // ll-excerpt: selection→note request from the anchor layer. Section ids are
-  // validated down to null (document-level anchor) so a hostile document
-  // cannot smuggle payload junk through the bridge.
+  // validated down to null (document-level anchor) and block indexes to sane
+  // integers, so a hostile document cannot smuggle payload junk through.
   if (kind === EXCERPT_REQUEST_TYPE && typeof (data as { text?: unknown }).text === 'string') {
     const sectionId = (data as { sectionId?: unknown }).sectionId
     const kp = (data as { kp?: unknown }).kp
+    const blockIndex = (data as { blockIndex?: unknown }).blockIndex
     return {
       kind,
       id,
       text: (data as { text: string }).text,
       sectionId: typeof sectionId === 'string' && isSafeSectionId(sectionId) ? sectionId : null,
       kp: typeof kp === 'string' ? kp.slice(0, 32) : null,
+      blockIndex: typeof blockIndex === 'number' && Number.isInteger(blockIndex) && blockIndex >= 0 && blockIndex <= 100000 ? blockIndex : null,
     }
   }
   // ll-draft-read: quiz draft restore request (host replies with the cached
@@ -1028,10 +1098,10 @@ export function parseBridgeNotice(event: MessageEvent, iframe: HTMLIFrameElement
   if (typeof data !== 'object' || data === null) return null
   const kind = (data as { type?: unknown }).type
   if (kind === ANCHOR_REPORT_TYPE) {
-    const raw = (data as { sections?: unknown }).sections
-    if (!Array.isArray(raw)) return null
+    const rawSections = (data as { sections?: unknown }).sections
+    if (!Array.isArray(rawSections)) return null
     const sections: SectionReportEntry[] = []
-    for (const entry of raw) {
+    for (const entry of rawSections) {
       if (typeof entry !== 'object' || entry === null) return null
       const record = entry as Record<string, unknown>
       if (typeof record.id !== 'string' || !isSafeSectionId(record.id)) return null
@@ -1040,7 +1110,20 @@ export function parseBridgeNotice(event: MessageEvent, iframe: HTMLIFrameElement
       if (!Number.isFinite(top) || !Number.isFinite(height) || !Number.isFinite(right)) return null
       sections.push({ id: record.id, top, height, right, title: typeof record.title === 'string' ? record.title : null })
     }
-    return { kind: ANCHOR_REPORT_TYPE, sections }
+    const rawBlocks = (data as { blocks?: unknown }).blocks
+    const blocks: BlockReportEntry[] = []
+    if (rawBlocks !== undefined) {
+      if (!Array.isArray(rawBlocks)) return null
+      for (const entry of rawBlocks) {
+        if (typeof entry !== 'object' || entry === null) return null
+        const record = entry as Record<string, unknown>
+        if (typeof record.i !== 'number' || !Number.isInteger(record.i) || record.i < 0 || record.i > 100000) return null
+        if (typeof record.top !== 'number' || typeof record.right !== 'number') return null
+        if (!Number.isFinite(record.top) || !Number.isFinite(record.right)) return null
+        blocks.push({ index: record.i, top: record.top, right: record.right })
+      }
+    }
+    return { kind: ANCHOR_REPORT_TYPE, report: { sections, blocks } }
   }
   if (kind === LOCATE_NOTICE_TYPE) {
     const sectionId = (data as { sectionId?: unknown }).sectionId
@@ -1086,6 +1169,12 @@ export function postSectionJump(target: Window, sectionId: string): void {
 /** Push per-section note counts so the layer can render 🗒 badges. */
 export function postSectionBadges(target: Window, counts: Record<string, number>): void {
   target.postMessage({ type: BADGES_COMMAND_TYPE, counts }, '*')
+}
+
+/** Name the block indexes the connection layer needs live geometry for
+ * (paragraph-level anchor targets; re-sent whenever the anchor set changes). */
+export function postBlockWatch(target: Window, indexes: readonly number[]): void {
+  target.postMessage({ type: BLOCK_WATCH_TYPE, indexes }, '*')
 }
 
 /** Toggle the connection-hover highlight on one section. */

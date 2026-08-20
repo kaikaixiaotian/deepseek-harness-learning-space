@@ -36,6 +36,9 @@ export interface NoteAnchor {
   readonly docTitle: string
   /** Document path relative to the workspace root at excerpt time (portable). */
   readonly docPath: string | null
+  /** Index of the excerpted text block in the source document (paragraph-
+   * level anchor target; documents are static so the index stays valid). */
+  readonly blockIndex: number | null
   /** Text snapshot of the excerpt block at collect time. */
   readonly quote: string
 }
@@ -82,6 +85,11 @@ function quoteOf(node: AnchorDocNode): string {
   return nodeText(node).replace(/\s+/g, ' ').trim().slice(0, 2000)
 }
 
+function attrNumber(attrs: Record<string, unknown> | null | undefined, name: string): number | null {
+  const value = attrs?.[name]
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100000 ? value : null
+}
+
 /** Collect every excerpt node of a tiptap doc JSON, in document order. */
 export function collectAnchorsFromDoc(doc: AnchorDocNode): NoteAnchor[] {
   const anchors: NoteAnchor[] = []
@@ -98,6 +106,7 @@ export function collectAnchorsFromDoc(doc: AnchorDocNode): NoteAnchor[] {
           kp: attrString(node.attrs, 'kp'),
           docTitle: attrString(node.attrs, 'docTitle') ?? chapterKey,
           docPath: attrString(node.attrs, 'docPath'),
+          blockIndex: attrNumber(node.attrs, 'blockIndex'),
           quote: quoteOf(node),
         })
       }
