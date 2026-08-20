@@ -389,6 +389,12 @@ describe('anchor layer injection + host commands', () => {
     expect(out).toContain("type: 'll-excerpt'")
     expect(out).toContain("'ll-excerpt-result'")
     expect(out).toContain('getSelection')
+    // section ownership resolves BOTH wrapped callouts (ancestor walk) and
+    // h2-sibling sections (nearest preceding marker) — without the fallback,
+    // excerpts from main-body text land as document-level anchors and the
+    // connection canvas stays empty
+    expect(out).toContain('compareDocumentPosition')
+    expect(out).toMatch(/m\.contains\(el\)/)
     // badges / jump / highlight command listeners
     expect(out).toContain("d.type === 'll-badges'")
     expect(out).toContain("d.type === 'll-jump'")

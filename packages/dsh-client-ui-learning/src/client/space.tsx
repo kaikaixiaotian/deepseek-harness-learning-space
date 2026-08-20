@@ -1114,18 +1114,6 @@ function NotesPanel(props: NotesPanelProps) {
                 {viewMode === 'map' ? '✎ ' + t('notesEditView') : '🗺 ' + t('notesMapView')}
               </button>
             )}
-            {/* Second branch-creation entry (roadmap P0: header button +
-                branch-rail ＋) for notes where the rail is scrolled away. */}
-            {noteKey !== null && (
-              <button
-                type='button'
-                title={t('noteBranchNew')}
-                className={css.pill + ' ' + css.pillInteractive}
-                onClick={() => { setCreating(true) }}
-              >
-                ＋
-              </button>
-            )}
             <span className={css.notesStatus + (status === 'saved' ? ' ' + css.notesStatusSaved : '')}>{statusLabel}</span>
           </div>
           {noteKey === null ? (

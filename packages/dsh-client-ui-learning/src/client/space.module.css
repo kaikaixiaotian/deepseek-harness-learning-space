@@ -650,21 +650,25 @@
   overflow: visible;
 }
 
+/* Connection curves ride the business accent at FULL opacity (a highlight,
+   not a watermark); hover thickens, glass themes add the glow. */
 .anchorPath {
   fill: none;
   stroke: var(--dsw-alias-state-business-primary);
-  stroke-width: 1.5;
-  stroke-opacity: 0.45;
+  stroke-width: 2;
   pointer-events: stroke;
   cursor: pointer;
 }
 
 .anchorPathHot {
-  stroke-opacity: 1;
-  stroke-width: 2.5;
+  stroke-width: 3;
 }
 
-/* glass themes: the hot curve picks up a soft glow (ambient-matched accent) */
+/* glass themes: connections pick up a soft glow (ambient-matched accent) */
+:global(html[data-dsh-aqua]) .anchorPath {
+  filter: drop-shadow(0 0 3px var(--dsw-alias-state-business-primary));
+}
+
 :global(html[data-dsh-aqua]) .anchorPathHot {
   filter: drop-shadow(0 0 6px var(--dsw-alias-state-business-primary));
 }

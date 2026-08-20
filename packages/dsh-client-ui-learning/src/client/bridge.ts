@@ -642,11 +642,25 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
     }
     return null;
   }
+  function isSectionId(id) { return !!id && (/^sec-/.test(id) || /^backfill-/.test(id)); }
+  // Section ownership of a selection. Callout sections (sec-obj/kp/summary)
+  // WRAP their content, but the h2/h3 markers (sec-intro/core/practice/pit,
+  // backfill-*) only PRECEDE theirs as siblings — an ancestor walk alone
+  // misses all main-body text. Fallback: the nearest marker that precedes
+  // the selection in document order (4 = DOCUMENT_POSITION_FOLLOWING).
   function sectionIdOf(node) {
-    return walkUp(node, function (el) {
-      if (el.id && (/^sec-/.test(el.id) || /^backfill-/.test(el.id))) return el.id;
-      return null;
-    });
+    var el = elementOf(node);
+    if (!el || el.nodeType !== 1) return null;
+    if (isSectionId(el.id)) return el.id;
+    var markers = document.querySelectorAll(SECTION_SEL);
+    var last = null;
+    for (var i = 0; i < markers.length; i++) {
+      var m = markers[i];
+      if (m === el || m.contains(el)) return m.id;
+      if (el.contains(m)) continue;
+      if (m.compareDocumentPosition(el) & 4) last = m;
+    }
+    return last ? last.id : null;
   }
   function kpOf(node) {
     return walkUp(node, function (el) {
