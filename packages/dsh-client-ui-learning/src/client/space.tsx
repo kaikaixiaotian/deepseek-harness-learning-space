@@ -17,13 +17,26 @@ import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Underline from '@tiptap/extension-underline'
 import css from './space.module.css'
-import { fileBaseName, isSafeNoteBranch, noteBranchesOf, noteKeyOf } from './classify.ts'
+import { fileBaseName, isSafeNoteBranch, noteBranchesOf, noteKeyOf, stemOf, workspaceRelativePath } from './classify.ts'
+import { anchorCounts, buildAnchorMetaHtml, collectAnchorsFromDoc, stripAnchorMeta, type NoteAnchor, type SectionInfo } from './anchors.ts'
+import { appendExcerpt, ExcerptBlock } from './excerpt-node.tsx'
 import { closeLearningSpace, learningSpaceState, subscribeLearningSpace } from './store.ts'
 import { getLearningFace, subscribeLearningFace, unwrap, type LearningEntry, type LearningNamespaceFace, type LearningWorkspaceView } from './remote.ts'
-import { bridgeReply, compatChapter, compatViz, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectLinkGuard, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, postThemeUpdate, resolveRelative, snapshotTheme, vizDirAlternates, vizPlaceholder, type ThemeSnapshot } from './bridge.ts'
+import { bridgeReply, clearQuizDraft, compatChapter, compatViz, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectAnchorLayer, injectLinkGuard, injectQuizDraft, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, parseBridgeNotice, postSectionBadges, postSectionJump, postThemeUpdate, quizDraftKey, readQuizDraft, resolveRelative, snapshotTheme, stripBaseTags, vizDirAlternates, vizPlaceholder, writeQuizDraft, type QuizDraftStore, type SectionReportEntry, type ThemeSnapshot } from './bridge.ts'
+import { ConnectionLayer } from './connections.tsx'
+import { NotesMap } from './notes-map.tsx'
 import type { NS } from './locales.ts'
 
 export interface LearningSpaceProps extends PropsLocale<typeof NS>, GlobalStandardProps {}
+
+/** Draft cache seat: localStorage in the dsh web app, absent in tests/SSR. */
+const DRAFT_STORE: QuizDraftStore | null = (() => {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage
+  } catch {
+    return null
+  }
+})()
 
 /** Typography for the notes content element and the TipTap ProseMirror body. */
 const NOTES_CONTENT_CSS = `
@@ -113,6 +126,56 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
     return () => { document.documentElement.removeAttribute('data-ls-open') }
   }, [space.open])
 
+  // - P1 anchor plumbing ------------------------------------------------------
+  // The iframe seat + notes scroller are overlay-owned so the connection
+  // layer can read both geometries; the panels register their handlers
+  // through refs (fresh per render, no re-subscription churn).
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const notesScrollRef = useRef<HTMLDivElement | null>(null)
+  const locateRef = useRef<((sectionId: string) => void) | null>(null)
+  const excerptHandleRef = useRef<((payload: ExcerptPayload) => boolean) | null>(null)
+  const sectionsRef = useRef<readonly SectionReportEntry[]>([])
+  const sectionsSigRef = useRef('')
+  const [sectionInfos, setSectionInfos] = useState<readonly SectionInfo[]>([])
+  const [pendingExcerpt, setPendingExcerpt] = useState<PendingExcerpt | null>(null)
+  const openNoteKey = selected === null ? null : noteKeyOf(selected)
+
+  const jumpToSection = (sectionId: string): void => {
+    const target = iframeRef.current?.contentWindow
+    if (target !== undefined && target !== null) postSectionJump(target, sectionId)
+  }
+
+  const handleSections = (sections: readonly SectionReportEntry[]): void => {
+    // Live geometry feeds the connection layer through the ref (per scroll
+    // frame, zero re-renders); React state keeps only id/title and updates
+    // when the section LIST changes (document switch), not on every scroll.
+    sectionsRef.current = sections
+    const sig = JSON.stringify(sections.map(section => [section.id, section.title]))
+    if (sig !== sectionsSigRef.current) {
+      sectionsSigRef.current = sig
+      setSectionInfos(sections.map(section => ({ id: section.id, title: section.title })))
+    }
+  }
+
+  const handleLocate = (sectionId: string): void => {
+    locateRef.current?.(sectionId)
+  }
+
+  const handleExcerpt = (payload: ExcerptPayload): boolean => {
+    if (workspace === null || openNoteKey === null) return false
+    if (!notesOpen) setNotesOpen(true)
+    const anchor = {
+      chapterKey: openNoteKey,
+      docTitle: fileBaseName(selected ?? openNoteKey),
+      docPath: workspaceRelativePath(workspace.root, selected ?? ''),
+    }
+    if (excerptHandleRef.current?.(payload) === true) return true
+    // Editor not ready yet (card just opened / note still loading): queue and
+    // ack optimistically — the panel applies it once the content is in place.
+    setPendingExcerpt({ ...payload, ...anchor })
+    return true
+  }
+
   if (!space.open) return null
 
   return (
@@ -161,10 +224,47 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
               📖 {t('notes')}
             </button>
           </div>
+          {/* relative so the connection layer's SVG can span viewer + notes */}
           <div className={css.body_row}>
             <TreePanel key={workspace.root} workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />
-            <Viewer workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />
-            {notesOpen && <NotesPanel workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />}
+            <Viewer
+              workspace={workspace}
+              learning={learning}
+              sid={sid}
+              selected={selected}
+              onSelect={setSelected}
+              iframeRef={iframeRef}
+              onExcerpt={handleExcerpt}
+              onSections={handleSections}
+              onLocate={handleLocate}
+              t={t}
+            />
+            {notesOpen && (
+              <NotesPanel
+                workspace={workspace}
+                learning={learning}
+                sid={sid}
+                selected={selected}
+                onSelect={setSelected}
+                sections={sectionInfos}
+                jumpToSection={jumpToSection}
+                iframeRef={iframeRef}
+                notesScrollRef={notesScrollRef}
+                locateRef={locateRef}
+                excerptHandleRef={excerptHandleRef}
+                pendingExcerpt={pendingExcerpt}
+                onConsumePendingExcerpt={() => { setPendingExcerpt(null) }}
+                t={t}
+              />
+            )}
+            <ConnectionLayer
+              iframeRef={iframeRef}
+              sectionsRef={sectionsRef}
+              notesScrollRef={notesScrollRef}
+              chapterKey={openNoteKey}
+              active={notesOpen}
+              onJump={jumpToSection}
+            />
           </div>
         </div>
       )}
@@ -286,12 +386,35 @@ function TreeBranch(props: TreeBranchProps) {
 
 // - middle: chapter/quiz viewer card ----------------------------------------
 
+/** Excerpt request routed from the iframe bubble to the notes panel. */
+export interface ExcerptPayload {
+  readonly text: string
+  readonly sectionId: string | null
+  readonly kp: string | null
+}
+
+/** A queued excerpt (notes card was closed / note still loading): applied
+ * once the editor holds the target note's content. */
+export interface PendingExcerpt extends ExcerptPayload {
+  readonly chapterKey: string
+  readonly docTitle: string
+  readonly docPath: string | null
+}
+
 interface ViewerProps {
   readonly workspace: LearningWorkspaceView
   readonly learning: LearningNamespaceFace
   readonly sid: string
   readonly selected: string | null
   readonly onSelect: (path: string) => void
+  /** The iframe seat, owned by the overlay (the connection layer needs it). */
+  readonly iframeRef: React.MutableRefObject<HTMLIFrameElement | null>
+  /** Apply an excerpt request; false = no note target for the open document. */
+  readonly onExcerpt: (payload: ExcerptPayload) => boolean
+  /** Section reports from the anchor layer (id/title state + live geometry). */
+  readonly onSections: (sections: readonly SectionReportEntry[]) => void
+  /** Badge click inside the iframe: focus the matching note block. */
+  readonly onLocate: (sectionId: string) => void
   readonly t: LearningSpaceProps['t']
 }
 
@@ -304,7 +427,7 @@ function Viewer(props: ViewerProps) {
   const [rebuildTick, setRebuildTick] = useState(0)
   const [submitNotice, setSubmitNotice] = useState<string | null>(null)
   const [themeTick, setThemeTick] = useState(0)
-  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const iframeRef = props.iframeRef
   const objectUrlsRef = useRef<string[]>([])
   const themeNonceRef = useRef(0)
   const themeAckRef = useRef<((nonce: number) => void) | null>(null)
@@ -420,7 +543,16 @@ function Viewer(props: ViewerProps) {
         // link) rather than rendering an unthemed page or an eternal spinner.
         html = injectTheme(content.text, theme)
       }
+      // A <base> tag would redirect even #sec-x TOC links to its origin —
+      // strip it before anything else touches the document.
+      html = stripBaseTags(html)
       html = injectLinkGuard(compatChapter(html))
+      // P1 anchor layer: selection bubble, section reports, badges. Injected
+      // last so it rides on top of the link guard's navigation rules.
+      html = injectAnchorLayer(html, { excerpt: t('excerptToNotes'), done: t('excerptDone'), fail: t('excerptFail') })
+      // Quiz draft layer: raw form state streams into the host cache, so a
+      // return to dsh (or any srcDoc rebuild) never wipes in-progress answers.
+      html = injectQuizDraft(html, selected)
       if (cancelled) {
         for (const url of objectUrls) URL.revokeObjectURL(url)
         return
@@ -487,10 +619,37 @@ function Viewer(props: ViewerProps) {
     for (const url of objectUrlsRef.current) URL.revokeObjectURL(url)
   }, [])
 
+  // Latest-callback refs: the message handler effect below must not
+  // re-subscribe on every render, but its closures still need to reach the
+  // overlay's freshest excerpt/section/locate wiring.
+  const onExcerptRef = useRef(props.onExcerpt)
+  onExcerptRef.current = props.onExcerpt
+  const onSectionsRef = useRef(props.onSections)
+  onSectionsRef.current = props.onSections
+  const onLocateRef = useRef(props.onLocate)
+  onLocateRef.current = props.onLocate
+
   // The message bridge: quiz forms inside the iframe read sibling answer
-  // files and submit answers through here (srcDoc has no fetchable base).
+  // files and submit answers through here (srcDoc has no fetchable base);
+  // the anchor layer streams section reports and excerpt requests through
+  // the same channel (notices are fire-and-forget, requests get a reply).
   useEffect(() => {
     const handler = (event: MessageEvent): void => {
+      const notice = parseBridgeNotice(event, iframeRef.current)
+      if (notice !== null) {
+        if (notice.kind === 'll-anchor-report') {
+          onSectionsRef.current(notice.sections)
+        } else if (notice.kind === 'll-locate') {
+          onLocateRef.current(notice.sectionId)
+        } else if (notice.kind === 'll-draft-save') {
+          // Cache the raw quiz form state; docKey guards against a stale
+          // layer racing a chapter switch (save landing on the new doc).
+          if (notice.docKey === selected) writeQuizDraft(DRAFT_STORE, quizDraftKey(workspace.root, selected), notice.answers)
+        } else if (notice.docKey === selected) {
+          clearQuizDraft(DRAFT_STORE, quizDraftKey(workspace.root, selected))
+        }
+        return
+      }
       const request = parseBridgeMessage(event, iframeRef.current)
       if (request === null) return
       const window_ = iframeRef.current?.contentWindow
@@ -543,12 +702,53 @@ function Viewer(props: ViewerProps) {
           }
           return
         }
+        if (request.kind === 'll-excerpt') {
+          // Selection→note request from the anchor layer's bubble. The
+          // overlay decides targetability (no note for this doc → false) and
+          // may queue the insert until the note finishes loading; the reply
+          // drives the bubble's ok/fail feedback.
+          const ok = onExcerptRef.current({ text: request.text, sectionId: request.sectionId, kp: request.kp })
+          window_.postMessage(bridgeReply(request, ok ? { ok: true } : { ok: false, error: 'no note target' }), '*')
+          return
+        }
+        if (request.kind === 'll-draft-read') {
+          // Draft restore on quiz load. Submitted answers are the commit
+          // point: when the answers json exists the draft is void (and
+          // dropped); otherwise the cached raw form state goes back in.
+          if (request.docKey !== selected) {
+            window_.postMessage(bridgeReply(request, { ok: false, error: 'stale document' }), '*')
+            return
+          }
+          const draftKey = quizDraftKey(workspace.root, selected)
+          const stem = stemOf(selected)
+          const baseDir = dirOf(selected)
+          let submitted = false
+          for (const suffix of ['-answers.json', '-答案.json']) {
+            try {
+              await unwrap(await learning.readFile(sid, workspace.root, resolveRelative(baseDir, stem + suffix)), 'readFile')
+              submitted = true
+              break
+            } catch {
+              // try the other locale suffix
+            }
+          }
+          if (submitted) {
+            clearQuizDraft(DRAFT_STORE, draftKey)
+            window_.postMessage(bridgeReply(request, { ok: false, error: 'already submitted' }), '*')
+            return
+          }
+          const draft = readQuizDraft(DRAFT_STORE, draftKey)
+          window_.postMessage(bridgeReply(request, draft === null ? { ok: false, error: 'no draft' } : { ok: true, content: JSON.stringify(draft) }), '*')
+          return
+        }
         try {
           const result = await unwrap(
             await learning.saveQuizAnswers(sid, workspace.root, selected ?? '', JSON.stringify(request.answers, null, 2)),
             'saveQuizAnswers',
           )
           setSubmitNotice(result.answersPath)
+          // The real answers json now exists — the draft cache is obsolete.
+          if (selected !== null) clearQuizDraft(DRAFT_STORE, quizDraftKey(workspace.root, selected))
           window_.postMessage(bridgeReply(request, { ok: true, path: result.answersPath }), '*')
         } catch (err) {
           window_.postMessage(bridgeReply(request, { ok: false, error: err instanceof Error ? err.message : String(err) }), '*')
@@ -608,7 +808,27 @@ function Viewer(props: ViewerProps) {
 
 const KEY_SEP = '\u0000'
 
-interface NotesPanelProps extends ViewerProps {}
+interface NotesPanelProps {
+  readonly workspace: LearningWorkspaceView
+  readonly learning: LearningNamespaceFace
+  readonly sid: string
+  readonly selected: string | null
+  readonly onSelect: (path: string) => void
+  /** Live section list of the OPEN document (empty before the first report). */
+  readonly sections: readonly SectionInfo[]
+  /** Jump into the open document's section (scrolls the middle iframe). */
+  readonly jumpToSection: (sectionId: string) => void
+  /** The iframe seat (badge pushes) and the notes scroller (locate scrolls). */
+  readonly iframeRef: React.MutableRefObject<HTMLIFrameElement | null>
+  readonly notesScrollRef: React.MutableRefObject<HTMLDivElement | null>
+  /** Host→panel handler seats, assigned by this panel on every render. */
+  readonly locateRef: React.MutableRefObject<((sectionId: string) => void) | null>
+  readonly excerptHandleRef: React.MutableRefObject<((payload: ExcerptPayload) => boolean) | null>
+  /** A queued excerpt, applied once the target note content is in place. */
+  readonly pendingExcerpt: PendingExcerpt | null
+  readonly onConsumePendingExcerpt: () => void
+  readonly t: LearningSpaceProps['t']
+}
 
 function NotesPanel(props: NotesPanelProps) {
   const { workspace, learning, sid, selected, t } = props
@@ -619,6 +839,11 @@ function NotesPanel(props: NotesPanelProps) {
   const [creating, setCreating] = useState(false)
   const [branchError, setBranchError] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  // The note whose content is actually IN the editor (inserts wait for this);
+  // anchors of that content (map view + badge pushes); edit/map view mode.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const [anchors, setAnchors] = useState<readonly NoteAnchor[]>([])
+  const [viewMode, setViewMode] = useState<'edit' | 'map'>('edit')
 
   const pendingRef = useRef<{ key: string; value: string } | null>(null)
   const timerRef = useRef<number | null>(null)
@@ -628,6 +853,18 @@ function NotesPanel(props: NotesPanelProps) {
   // the chapter or branch changes. The update callback goes through a ref
   // so the debounced save always sees the current chapter/branch.
   const onUpdateRef = useRef<() => void>(() => {})
+  // Live wiring for the excerpt node view: the editor (and its configured
+  // extension options) is created once, so they read through refs the panel
+  // keeps fresh on every render (section titles from the iframe reports;
+  // breadcrumb jumps resolved against the CURRENT chapter).
+  const sectionsRef = useRef<readonly SectionInfo[]>(props.sections)
+  sectionsRef.current = props.sections
+  const noteKeyRef = useRef<string | null>(noteKey)
+  noteKeyRef.current = noteKey
+  const onSelectRef = useRef(props.onSelect)
+  onSelectRef.current = props.onSelect
+  const jumpToSectionRef = useRef(props.jumpToSection)
+  jumpToSectionRef.current = props.jumpToSection
   const editor = useEditor({
     extensions: [
       // tiptap 3 StarterKit already bundles link and underline; disable the
@@ -635,6 +872,23 @@ function NotesPanel(props: NotesPanelProps) {
       StarterKit.configure({ link: false, underline: false }),
       Link.configure({ openOnClick: false }),
       Underline,
+      // Anchored excerpt blocks — registered LAST so their specific
+      // parse rule (blockquote[data-ll-anchor]) wins over StarterKit's
+      // generic blockquote rule (later extensions take precedence).
+      ExcerptBlock.configure({
+        sectionTitleOf: sectionId => sectionsRef.current.find(section => section.id === sectionId)?.title ?? null,
+        onCrumbClick: target => {
+          // Same document: scroll its section into view. Otherwise reopen the
+          // source document from its stored workspace-relative path.
+          if (target.chapterKey !== null && target.chapterKey === noteKeyRef.current && target.sectionId !== null) {
+            jumpToSectionRef.current(target.sectionId)
+            return
+          }
+          if (typeof target.docPath === 'string' && target.docPath !== '') {
+            onSelectRef.current(workspace.root + '/' + target.docPath)
+          }
+        },
+      }),
     ],
     content: '',
     editorProps: { attributes: { class: 'll-notes-content', style: 'min-height:100%;outline:none;' } },
@@ -657,7 +911,18 @@ function NotesPanel(props: NotesPanelProps) {
 
   onUpdateRef.current = (): void => {
     if (editor === null || activeKeyRef.current === null) return
-    pendingRef.current = { key: activeKeyRef.current, value: editor.getHTML() }
+    // The saved file = derived anchor index comment + body. Files without
+    // anchors stay byte-identical to the pre-P1 format (no comment added).
+    const collected = collectAnchorsFromDoc(editor.getJSON())
+    const body = editor.getHTML()
+    pendingRef.current = { key: activeKeyRef.current, value: collected.length > 0 ? buildAnchorMetaHtml(collected) + body : body }
+    setAnchors(collected)
+    // Section badges reflect the note live: push the fresh per-section counts
+    // into the open document (cheap message; the layer re-renders badges).
+    const badgeTarget = props.iframeRef.current?.contentWindow
+    if (badgeTarget !== undefined && badgeTarget !== null) {
+      postSectionBadges(badgeTarget, anchorCounts(collected, noteKey ?? ''))
+    }
     setStatus('saving')
     if (timerRef.current !== null) window.clearTimeout(timerRef.current)
     timerRef.current = window.setTimeout(() => {
@@ -678,6 +943,8 @@ function NotesPanel(props: NotesPanelProps) {
     if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null }
     activeKeyRef.current = key
     setStatus('idle')
+    setLoadedKey(null)
+    setAnchors([])
     if (key === null) {
       editor?.commands.clearContent()
       return
@@ -687,7 +954,18 @@ function NotesPanel(props: NotesPanelProps) {
       const keyNote = key === null ? '' : key.split(KEY_SEP)[0]
       const result = await learning.readNote(sid, workspace.root, keyNote, branch === '' ? undefined : branch)
       if (cancelled) return
-      editor?.commands.setContent(result.ok ? result.value.content : '', { emitUpdate: false })
+      // Drop a leading anchor-index comment before handing the body to the
+      // editor (the body is the source of truth; the index rebuilds on save).
+      editor?.commands.setContent(result.ok ? stripAnchorMeta(result.value.content).body : '', { emitUpdate: false })
+      const collected = editor === null ? [] : collectAnchorsFromDoc(editor.getJSON())
+      setAnchors(collected)
+      setLoadedKey(key)
+      // The freshly loaded branch owns the badges now (chapter/branch switch
+      // rebuilt the srcDoc, so no stale counts can linger in the iframe).
+      const badgeTarget = props.iframeRef.current?.contentWindow
+      if (badgeTarget !== undefined && badgeTarget !== null) {
+        postSectionBadges(badgeTarget, anchorCounts(collected, noteKey ?? ''))
+      }
     })()
     return () => { cancelled = true }
   }, [noteKey, branch, editor, learning, sid, workspace])
@@ -697,6 +975,56 @@ function NotesPanel(props: NotesPanelProps) {
     const pending = pendingRef.current
     if (pending !== null) { pendingRef.current = null; saveRef.current(pending.key, pending.value) }
   }, [])
+
+  // - P1 handler seats (fresh per render; the overlay calls through refs) ----
+  props.excerptHandleRef.current = (payload: ExcerptPayload): boolean => {
+    // Direct excerpt application — only safe once the editor holds the
+    // TARGET note's content (otherwise the insert would be wiped by the
+    // setContent that follows the async readNote).
+    if (editor === null || noteKey === null || loadedKey !== activeKeyRef.current) return false
+    return appendExcerpt(editor, {
+      chapterKey: noteKey,
+      sectionId: payload.sectionId,
+      kp: payload.kp,
+      docTitle: fileBaseName(props.selected ?? noteKey),
+      docPath: workspaceRelativePath(workspace.root, props.selected ?? ''),
+    }, payload.text)
+  }
+
+  props.locateRef.current = (sectionId: string): void => {
+    // Badge click in the chapter: bring the editor back if the map view hid
+    // it, then scroll the first matching excerpt into view and flash it.
+    setViewMode('edit')
+    const container = props.notesScrollRef.current
+    const target = container === null ? null : container.querySelector('[data-ll-section="' + sectionId + '"]')
+    if (target instanceof HTMLElement) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target.classList.add(css.excerptHot)
+      window.setTimeout(() => { target.classList.remove(css.excerptHot) }, 2000)
+    }
+  }
+
+  // A queued excerpt (bubble fired while the note was still loading / the
+  // card was closed): apply it as soon as the editor is ready — or drop it
+  // if the chapter moved on in the meantime.
+  useEffect(() => {
+    const pending = props.pendingExcerpt
+    if (pending === null || editor === null) return
+    if (loadedKey !== activeKeyRef.current) return
+    if (pending.chapterKey !== noteKey) {
+      props.onConsumePendingExcerpt()
+      return
+    }
+    if (appendExcerpt(editor, {
+      chapterKey: pending.chapterKey,
+      sectionId: pending.sectionId,
+      kp: pending.kp,
+      docTitle: pending.docTitle,
+      docPath: pending.docPath,
+    }, pending.text)) {
+      props.onConsumePendingExcerpt()
+    }
+  }, [props.pendingExcerpt, props.onConsumePendingExcerpt, editor, loadedKey, noteKey])
 
   // Enumerate this chapter's note branches from the notes dir listing.
   useEffect(() => {
@@ -776,6 +1104,28 @@ function NotesPanel(props: NotesPanelProps) {
           <div className={css.notesHead}>
             <span className={css.notesTitle}>{t('notes')}</span>
             <span className={css.spacer} />
+            {/* P1 relation-map view toggle (edit ↔ map). */}
+            {noteKey !== null && (
+              <button
+                type='button'
+                className={css.pill + ' ' + css.pillInteractive + (viewMode === 'map' ? ' ' + css.pillActive : '')}
+                onClick={() => { setViewMode(viewMode === 'map' ? 'edit' : 'map') }}
+              >
+                {viewMode === 'map' ? '✎ ' + t('notesEditView') : '🗺 ' + t('notesMapView')}
+              </button>
+            )}
+            {/* Second branch-creation entry (roadmap P0: header button +
+                branch-rail ＋) for notes where the rail is scrolled away. */}
+            {noteKey !== null && (
+              <button
+                type='button'
+                title={t('noteBranchNew')}
+                className={css.pill + ' ' + css.pillInteractive}
+                onClick={() => { setCreating(true) }}
+              >
+                ＋
+              </button>
+            )}
             <span className={css.notesStatus + (status === 'saved' ? ' ' + css.notesStatusSaved : '')}>{statusLabel}</span>
           </div>
           {noteKey === null ? (
@@ -783,6 +1133,7 @@ function NotesPanel(props: NotesPanelProps) {
           ) : (
             <>
               <style>{NOTES_CONTENT_CSS}</style>
+              {viewMode === 'edit' && (
               <div className={css.notesToolbar}>
                 {/* every handler builds a FRESH chain at click time — a chain
                     captured at render binds the editor state of that render,
@@ -811,9 +1162,22 @@ function NotesPanel(props: NotesPanelProps) {
                 }, editor?.isActive('link') === true)}
                 {toolbarButton(t('noteClear'), 'clear format', () => { editor?.chain().focus().unsetAllMarks().clearNodes().run() })}
               </div>
-              <div className={css.notesScroll}>
-                {editor === null ? null : <EditorContent editor={editor} />}
-              </div>
+              )}
+              {viewMode === 'map'
+                ? (
+                  <NotesMap
+                    sections={props.sections}
+                    anchors={anchors}
+                    chapterKey={noteKey}
+                    t={t}
+                    onJump={props.jumpToSection}
+                  />
+                )
+                : (
+                  <div ref={props.notesScrollRef} className={css.notesScroll}>
+                    {editor === null ? null : <EditorContent editor={editor} />}
+                  </div>
+                )}
             </>
           )}
         </div>

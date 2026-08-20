@@ -7,22 +7,39 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  ANCHOR_REPORT_TYPE,
   bridgeReply,
+  clearQuizDraft,
   dirOf,
+  DRAFT_CLEAR_TYPE,
+  DRAFT_READ_TYPE,
+  DRAFT_SAVE_TYPE,
   floorThemeSnapshot,
+  injectAnchorLayer,
   injectLinkGuard,
+  injectQuizDraft,
   injectTheme,
   inlineRelativeIframes,
   isThemeAck,
+  LOCATE_NOTICE_TYPE,
   parseBridgeMessage,
+  parseBridgeNotice,
+  postSectionBadges,
+  postSectionHighlight,
+  postSectionJump,
   postThemeUpdate,
+  quizDraftKey,
+  readQuizDraft,
   resolveDarkFlag,
   resolveRelative,
   compatChapter,
   compatViz,
   safeOpenTarget,
+  stripBaseTags,
   vizDirAlternates,
   vizPlaceholder,
+  writeQuizDraft,
+  type QuizDraftStore,
   type ThemeSnapshot,
 } from '../src/client/bridge.ts'
 
@@ -195,16 +212,32 @@ describe('injectLinkGuard / vizPlaceholder / safeOpenTarget', () => {
     expect(out.indexOf('ll-open')).toBeLessThan(out.indexOf('</body>'))
     expect(injectLinkGuard('<p>fragment</p>')).toContain('ll-open')
   })
-  it('guard lets fragments through and routes everything else (static source check)', () => {
+  it('guard scrolls fragments manually and routes everything else (static source check)', () => {
     const script = injectLinkGuard('<body></body>')
-    // fragment and scheme skips, preventDefault, and the postMessage route
+    // fragment links are taken over by the guard: preventDefault + in-doc
+    // scrollIntoView, so a <base> or inherited-base quirk can never turn a
+    // TOC click into a full navigation to the app origin
     expect(script).toContain("href.charAt(0) === '#'")
+    expect(script).toMatch(/charAt\(0\) === '#'.*preventDefault.*scrollIntoView/s)
+    expect(script).toContain('decodeURIComponent')
+    // scheme skips, preventDefault, and the postMessage route
     expect(script).toContain('ev.preventDefault()')
     expect(script).toContain("type: 'll-open'")
     // external http links open in a browser tab from inside the iframe
     expect(script).toMatch(/https\?:.*window\.open/s)
     // form submits are neutralized (Enter-in-input must not reload the srcDoc)
     expect(script).toMatch(/addEventListener\('submit'.*preventDefault/s)
+    // EMPTY href must be prevented too: under srcDoc it resolves against the
+    // inherited app base, loading the dsh SPA over the document (the
+    // "TOC click opens the main UI in the reading pane" bug)
+    expect(script).toContain('if (!href) { ev.preventDefault(); return; }')
+  })
+  it('stripBaseTags removes base tags so fragment links stay document-relative', () => {
+    const doc = '<html><head><base href="https://app/x/"><base target="_blank"></head><body><p>ok</p></body></html>'
+    const out = stripBaseTags(doc)
+    expect(out).not.toMatch(/<base/i)
+    expect(out).toContain('<p>ok</p>')
+    expect(stripBaseTags('<p>clean</p>')).toBe('<p>clean</p>')
   })
   it('vizDirAlternates swaps the locale-mapped demo dir both ways', () => {
     expect(vizDirAlternates('./viz/阶段1-章01-arrow.html')).toEqual(['./viz/阶段1-章01-arrow.html', './演示/阶段1-章01-arrow.html'])
@@ -279,6 +312,181 @@ describe('parseBridgeMessage', () => {
     expect(parseBridgeMessage(makeEvent({ type: 'll-read', path: 'x' }, iframe.contentWindow), iframe)).toBeNull()
     expect(parseBridgeMessage(makeEvent({ type: 'll-submit', id: 1, quiz: 'q' }, iframe.contentWindow), iframe)).toBeNull()
     expect(parseBridgeMessage(makeEvent({ type: 'll-open', id: 1 }, iframe.contentWindow), iframe)).toBeNull()
+  })
+  it('accepts ll-excerpt with a safe section id, and demotes unsafe ids to document level', () => {
+    const iframe = { contentWindow: {} } as unknown as HTMLIFrameElement
+    expect(parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 5, text: 'quoted', sectionId: 'sec-core', kp: 'KP-2' }, iframe.contentWindow), iframe))
+      .toEqual({ kind: 'll-excerpt', id: 5, text: 'quoted', sectionId: 'sec-core', kp: 'KP-2' })
+    // quiz/baseline docs carry no sec-* skeleton → document-level anchor
+    expect(parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 6, text: 'q' }, iframe.contentWindow), iframe))
+      .toEqual({ kind: 'll-excerpt', id: 6, text: 'q', sectionId: null, kp: null })
+    const hostile = parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 7, text: 'x', sectionId: '"><script>', kp: 42 }, iframe.contentWindow), iframe)
+    expect(hostile).toEqual({ kind: 'll-excerpt', id: 7, text: 'x', sectionId: null, kp: null })
+    expect(parseBridgeMessage(makeEvent({ type: 'll-excerpt', id: 8 }, iframe.contentWindow), iframe)).toBeNull()
+  })
+  it('accepts ll-draft-read with a sane docKey, rejecting empty/oversized keys', () => {
+    const iframe = { contentWindow: {} } as unknown as HTMLIFrameElement
+    expect(parseBridgeMessage(makeEvent({ type: DRAFT_READ_TYPE, id: 9, docKey: 'C:/w/chapters/q.html' }, iframe.contentWindow), iframe))
+      .toEqual({ kind: 'll-draft-read', id: 9, docKey: 'C:/w/chapters/q.html' })
+    expect(parseBridgeMessage(makeEvent({ type: DRAFT_READ_TYPE, id: 10, docKey: '' }, iframe.contentWindow), iframe)).toBeNull()
+    expect(parseBridgeMessage(makeEvent({ type: DRAFT_READ_TYPE, id: 11, docKey: 'x'.repeat(513) }, iframe.contentWindow), iframe)).toBeNull()
+    expect(parseBridgeMessage(makeEvent({ type: DRAFT_READ_TYPE, id: 12 }, iframe.contentWindow), iframe)).toBeNull()
+  })
+})
+
+describe('parseBridgeNotice (anchor layer)', () => {
+  const makeEvent = (data: unknown, source: unknown): MessageEvent =>
+    ({ data, source }) as unknown as MessageEvent
+  const iframe = { contentWindow: {} } as unknown as HTMLIFrameElement
+
+  it('accepts section reports from the owning iframe only, with shape-checked entries', () => {
+    const sections = [{ id: 'sec-core', top: 12, height: 300, right: 640, title: '核心概念' }, { id: 'sec-pit', top: 400, height: 80, right: 640, title: null }]
+    expect(parseBridgeNotice(makeEvent({ type: ANCHOR_REPORT_TYPE, sections }, iframe.contentWindow), iframe))
+      .toEqual({ kind: ANCHOR_REPORT_TYPE, sections })
+    expect(parseBridgeNotice(makeEvent({ type: ANCHOR_REPORT_TYPE, sections }, { other: 1 }), iframe)).toBeNull()
+  })
+  it('rejects malformed reports and unsafe ids', () => {
+    for (const bad of [
+      { type: ANCHOR_REPORT_TYPE, sections: 'nope' },
+      { type: ANCHOR_REPORT_TYPE, sections: [{ id: 'sec-core', top: 'x', height: 1, right: 1 }] },
+      { type: ANCHOR_REPORT_TYPE, sections: [{ id: '"><script>', top: 1, height: 1, right: 1 }] },
+      { type: ANCHOR_REPORT_TYPE, sections: [{ id: 'sec-core', top: Number.NaN, height: 1, right: 1 }] },
+      { type: 'other' },
+    ]) {
+      expect(parseBridgeNotice(makeEvent(bad, iframe.contentWindow), iframe)).toBeNull()
+    }
+  })
+  it('accepts ll-locate clicks with safe ids only', () => {
+    expect(parseBridgeNotice(makeEvent({ type: LOCATE_NOTICE_TYPE, sectionId: 'sec-intro' }, iframe.contentWindow), iframe))
+      .toEqual({ kind: LOCATE_NOTICE_TYPE, sectionId: 'sec-intro' })
+    expect(parseBridgeNotice(makeEvent({ type: LOCATE_NOTICE_TYPE, sectionId: 'a b' }, iframe.contentWindow), iframe)).toBeNull()
+    expect(parseBridgeNotice(makeEvent({ type: LOCATE_NOTICE_TYPE }, iframe.contentWindow), iframe)).toBeNull()
+  })
+})
+
+describe('anchor layer injection + host commands', () => {
+  const LABELS = { excerpt: '摘录到笔记', done: '已加入笔记 ✓', fail: '该文档暂不支持笔记' }
+
+  it('injects the style + script before </body>, embedding the labels safely', () => {
+    const html = '<html><head></head><body><p>doc</p></body></html>'
+    const out = injectAnchorLayer(html, LABELS)
+    expect(out.indexOf('ll-anchor-style')).toBeGreaterThan(out.indexOf('<body>'))
+    expect(out.indexOf('ll-anchor-layer')).toBeGreaterThan(out.indexOf('ll-anchor-style'))
+    expect(out.indexOf('ll-anchor-layer')).toBeLessThan(out.indexOf('</body>'))
+    expect(out).toContain('摘录到笔记')
+    // label embedding is escaped against </script> breakout
+    expect(injectAnchorLayer('<body></body>', { ...LABELS, excerpt: '</script>x' })).not.toContain('</script>x')
+    // fragment documents get the layer appended
+    expect(injectAnchorLayer('<p>frag</p>', LABELS)).toContain('ll-anchor-layer')
+  })
+  it('layer script carries the report channel, the bubble protocol, badges and commands', () => {
+    const out = injectAnchorLayer('<body></body>', LABELS)
+    // section reports: viz-height pattern (rAF-coalesced child→parent posts)
+    expect(out).toContain("type: 'll-anchor-report'")
+    expect(out).toMatch(/addEventListener\('scroll'.*true/s)
+    expect(out).toContain('requestAnimationFrame')
+    // excerpt bubble: request + typed reply handling + selection capture
+    expect(out).toContain("type: 'll-excerpt'")
+    expect(out).toContain("'ll-excerpt-result'")
+    expect(out).toContain('getSelection')
+    // badges / jump / highlight command listeners
+    expect(out).toContain("d.type === 'll-badges'")
+    expect(out).toContain("d.type === 'll-jump'")
+    expect(out).toContain("d.type === 'll-highlight'")
+    expect(out).toContain('scrollIntoView')
+    // styles ride the dsw tokens exclusively (never a raw hex)
+    const style = out.slice(out.indexOf('ll-anchor-style'), out.indexOf('</style>'))
+    expect(style).toContain('var(--dsw-alias-state-business-primary')
+    expect(style).not.toMatch(/#[0-9a-f]{3,6}\b/i)
+  })
+  it('host command senders post with targetOrigin star', () => {
+    const posted: { data: unknown; origin: string }[] = []
+    const target = { postMessage: (data: unknown, origin: string) => { posted.push({ data, origin }) } } as unknown as Window
+    postSectionJump(target, 'sec-core')
+    postSectionBadges(target, { 'sec-core': 2 })
+    postSectionHighlight(target, 'sec-intro', true)
+    expect(posted).toEqual([
+      { data: { type: 'll-jump', sectionId: 'sec-core' }, origin: '*' },
+      { data: { type: 'll-badges', counts: { 'sec-core': 2 } }, origin: '*' },
+      { data: { type: 'll-highlight', sectionId: 'sec-intro', on: true }, origin: '*' },
+    ])
+  })
+})
+
+describe('parseBridgeNotice (quiz draft traffic)', () => {
+  const makeEvent = (data: unknown, source: unknown): MessageEvent =>
+    ({ data, source }) as unknown as MessageEvent
+  const iframe = { contentWindow: {} } as unknown as HTMLIFrameElement
+
+  it('accepts draft saves with object payloads and sane docKeys', () => {
+    const answers = { q1: 'a', q2: ['x', 'y'], q3: 'hello' }
+    expect(parseBridgeNotice(makeEvent({ type: DRAFT_SAVE_TYPE, docKey: 'd', answers }, iframe.contentWindow), iframe))
+      .toEqual({ kind: DRAFT_SAVE_TYPE, docKey: 'd', answers })
+  })
+  it('rejects malformed draft traffic: non-object answers, arrays, oversize payloads, bad keys', () => {
+    const big: Record<string, string> = {}
+    for (let i = 0; i < 20000; i++) big['k' + i] = 'v'
+    for (const bad of [
+      { type: DRAFT_SAVE_TYPE, docKey: 'd', answers: 'str' },
+      { type: DRAFT_SAVE_TYPE, docKey: 'd', answers: [1, 2] },
+      { type: DRAFT_SAVE_TYPE, docKey: 'd' },
+      { type: DRAFT_SAVE_TYPE, docKey: '', answers: {} },
+      { type: DRAFT_SAVE_TYPE, docKey: 'd', answers: big },
+      { type: DRAFT_CLEAR_TYPE, docKey: '' },
+    ]) {
+      expect(parseBridgeNotice(makeEvent(bad, iframe.contentWindow), iframe)).toBeNull()
+    }
+    expect(parseBridgeNotice(makeEvent({ type: DRAFT_CLEAR_TYPE, docKey: 'd' }, iframe.contentWindow), iframe))
+      .toEqual({ kind: DRAFT_CLEAR_TYPE, docKey: 'd' })
+  })
+})
+
+describe('quiz draft cache (key + store helpers)', () => {
+  const memoryStore = (): QuizDraftStore => {
+    const map = new Map<string, string>()
+    return {
+      getItem: key => map.get(key) ?? null,
+      setItem: (key, value) => { map.set(key, value) },
+      removeItem: key => { map.delete(key) },
+    }
+  }
+  it('quizDraftKey normalizes separators and trailing slashes', () => {
+    expect(quizDraftKey('C:\\w\\空间\\', 'C:\\w\\空间\\测验\\q.html'))
+      .toBe(quizDraftKey('C:/w/空间', 'C:/w/空间/测验/q.html'))
+    expect(quizDraftKey('C:/w', 'C:/w/q.html')).toBe('learning-space:quiz-draft:C:/w:C:/w/q.html')
+  })
+  it('store helpers round-trip a draft and drop corrupt entries', () => {
+    const store = memoryStore()
+    const key = quizDraftKey('C:/w', 'C:/w/q.html')
+    expect(readQuizDraft(store, key)).toBeNull()
+    writeQuizDraft(store, key, { q1: 'a' })
+    expect(readQuizDraft(store, key)).toEqual({ q1: 'a' })
+    clearQuizDraft(store, key)
+    expect(readQuizDraft(store, key)).toBeNull()
+    // corrupt JSON: removed on sight, reads as absent
+    store.setItem(key, '{nope')
+    expect(readQuizDraft(store, key)).toBeNull()
+    expect(store.getItem(key)).toBeNull()
+    // null store (SSR/tests): all no-ops
+    expect(readQuizDraft(null, key)).toBeNull()
+    expect(() => { writeQuizDraft(null, key, {}); clearQuizDraft(null, key) }).not.toThrow()
+  })
+  it('injectQuizDraft embeds the docKey, gates on forms, and wires save/restore/clear', () => {
+    const html = '<html><body><form><input name="q1"></form></body></html>'
+    const out = injectQuizDraft(html, 'C:/w/测验/q.html')
+    expect(out.indexOf('ll-quiz-draft')).toBeGreaterThan(out.indexOf('<body>'))
+    expect(out).toContain('"C:/w/测验/q.html"')
+    // debounced save on input/change (capture), restore request on load,
+    // apply on the typed reply, clear after a successful submit
+    expect(out).toContain("type: '" + DRAFT_SAVE_TYPE + "'")
+    expect(out).toMatch(/addEventListener\('input'.*true/s)
+    expect(out).toContain("type: '" + DRAFT_READ_TYPE + "'")
+    expect(out).toContain("'" + DRAFT_READ_TYPE + "-result'")
+    expect(out).toContain("type: '" + DRAFT_CLEAR_TYPE + "'")
+    expect(out).toContain("'ll-submit-result'")
+    // collect() keeps raw control state shapes (radio value, checkbox array)
+    expect(out).toMatch(/radio.*checked/s)
+    expect(out).toContain('Array.isArray(out[k])')
   })
 })
 

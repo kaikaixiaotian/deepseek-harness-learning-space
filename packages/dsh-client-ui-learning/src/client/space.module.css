@@ -61,8 +61,10 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Below the full-width header card: the three content cards in one row. */
+/* Below the full-width header card: the three content cards in one row.
+ * relative — the P1 connection layer (SVG) spans viewer + notes from here. */
 .body_row {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -579,6 +581,181 @@
 .branchNewInputError {
   outline: 1px solid var(--dsw-alias-state-error-primary);
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* - P1 anchored excerpt blocks (note↔chapter links) ------------------------ */
+
+/* The excerpt node view: quote block tinted with the business accent so
+   anchors read at a glance; the content hole keeps normal note typography. */
+.excerptWrap {
+  margin: 6px 0;
+  border-left: 3px solid var(--dsw-alias-state-business-primary);
+  border-radius: 0 10px 10px 0;
+  background: var(--dsw-alias-state-business-tertiary);
+  padding: 6px 8px 8px;
+}
+
+.excerptCrumbRow {
+  display: flex;
+  margin: 0 0 4px;
+}
+
+.excerptCrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 2px 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  color: var(--dsw-alias-state-business-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.1s var(--ds-ease-in-out, ease);
+}
+
+.excerptCrumb:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* connection-hover / badge-locate highlight on an excerpt block */
+.excerptHot {
+  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
+}
+
+@keyframes excerptFlashKF {
+  0% { box-shadow: 0 0 0 3px var(--dsw-alias-state-business-primary); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+
+.excerptFlash {
+  animation: excerptFlashKF 1.2s var(--ds-ease-in-out, ease) 2;
+}
+
+/* - P1 connection canvas (note↔chapter bezier overlay) ---------------------- */
+
+/* Spans the whole body row; the layer itself never takes pointer events,
+   each path re-enables them along its stroke only. */
+.anchorLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.anchorPath {
+  fill: none;
+  stroke: var(--dsw-alias-state-business-primary);
+  stroke-width: 1.5;
+  stroke-opacity: 0.45;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.anchorPathHot {
+  stroke-opacity: 1;
+  stroke-width: 2.5;
+}
+
+/* glass themes: the hot curve picks up a soft glow (ambient-matched accent) */
+:global(html[data-dsh-aqua]) .anchorPathHot {
+  filter: drop-shadow(0 0 6px var(--dsw-alias-state-business-primary));
+}
+
+/* - P1 relation map (notes card, map view) ---------------------------------- */
+
+.notesMap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+}
+
+.notesMapEmpty {
+  padding: 24px 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.notesMapRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  padding: 6px 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: left;
+  transition: background 0.1s var(--ds-ease-in-out, ease);
+}
+
+.notesMapRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.notesMapRowLinked {
+  color: var(--dsw-alias-label-primary);
+}
+
+.notesMapTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notesMapHeat {
+  flex: none;
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-skeleton);
+  overflow: hidden;
+}
+
+.notesMapHeatFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.notesMapCount {
+  flex: none;
+  min-width: 30px;
+  font-size: 11px;
+  color: var(--dsw-alias-state-business-primary);
+  text-align: right;
+}
+
+.notesMapDocRow {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.notesMapStats {
+  margin-top: 6px;
+  padding: 8px 8px 2px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* - turn-tail learning cards ---------------------------------------------- */

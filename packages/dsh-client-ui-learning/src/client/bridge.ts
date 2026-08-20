@@ -13,6 +13,8 @@
  *    Pure helpers here, DOM wiring lives in the Viewer component.
  */
 
+import { isSafeSectionId } from './anchors.ts'
+
 // - theme bridge ---------------------------------------------------------------
 
 /** Tokens the generated templates consume (with fallbacks of their own).
@@ -472,12 +474,418 @@ export function injectLinkGuard(html: string): string {
     var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
     if (!a) return;
     var href = a.getAttribute('href') || '';
-    if (!href || href.charAt(0) === '#' || /^(blob:|data:|about:|javascript:|mailto:|tel:)/i.test(href)) return;
+    // EMPTY href: srcDoc resolves it against the INHERITED base (the app
+    // origin), so the default action loads the dsh SPA over the document —
+    // the reported "TOC click opens the main UI in the reading pane" bug.
+    // An empty href can never do anything useful in here: block it.
+    if (!href) { ev.preventDefault(); return; }
+    if (href.charAt(0) === '#') {
+      // Fragment links (the TOC) are scrolled MANUALLY: under a <base> tag
+      // (or any inherited-base quirk) the browser would resolve '#sec-x'
+      // against the app origin and navigate the whole document away.
+      ev.preventDefault();
+      var id = href.slice(1);
+      if (id === '') { window.scrollTo(0, 0); return; }
+      try {
+        var target = document.getElementById(id) || document.getElementById(decodeURIComponent(id));
+        if (target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) {}
+      return;
+    }
+    if (/^(blob:|data:|about:|javascript:|mailto:|tel:)/i.test(href)) return;
     ev.preventDefault();
     if (/^https?:/i.test(href)) { try { window.open(href, '_blank', 'noopener'); } catch (e) {} return; }
     try { parent.postMessage({ type: 'll-open', id: Date.now(), href: href }, '*'); } catch (e) {}
   }, true);
   document.addEventListener('submit', function (ev) { ev.preventDefault(); }, true);
+})();</script>`
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, script + '</body>')
+  return html + script
+}
+
+/**
+ * Strip <base> tags from a srcDoc document: a base href redirects even
+ * fragment-only links (#sec-x) to its origin — the browser then treats the
+ * TOC click as a full navigation and loads that page (the dsh SPA) over the
+ * document. In-space URL resolution is host-managed (viz blobs, ll-open
+ * bridge), so a base tag can only do harm here.
+ */
+export function stripBaseTags(html: string): string {
+  return html.replace(/<base\b[^>]*>/gi, '')
+}
+
+// - P1 anchor layer (excerpt bubble / section reports / badges) ---------------
+
+/** Message types of the P1 anchor bridge (see the protocol table in
+ * design/notes-roadmap.md; all travel with targetOrigin '*' because srcDoc
+ * documents carry an opaque null origin). */
+export const EXCERPT_REQUEST_TYPE = 'll-excerpt'
+export const ANCHOR_REPORT_TYPE = 'll-anchor-report'
+export const LOCATE_NOTICE_TYPE = 'll-locate'
+export const JUMP_COMMAND_TYPE = 'll-jump'
+export const BADGES_COMMAND_TYPE = 'll-badges'
+export const HIGHLIGHT_COMMAND_TYPE = 'll-highlight'
+
+/** One section of the open document as reported by the anchor layer
+ * (viewport-relative coords inside the iframe; `right` is the element's right
+ * edge — the connection endpoints anchor there). */
+export interface SectionReportEntry {
+  readonly id: string
+  readonly top: number
+  readonly height: number
+  readonly right: number
+  readonly title: string | null
+}
+
+/** Bubble labels — injected as literals because the iframe cannot reach the
+ * host locale dictionary. */
+export interface AnchorLayerLabels {
+  readonly excerpt: string
+  readonly done: string
+  readonly fail: string
+}
+
+/**
+ * Inject the P1 anchor layer into a srcDoc document (same mechanism as
+ * {@link injectLinkGuard}: a style + script appended before </body>, so every
+ * already-generated workspace document gains the abilities without being
+ * re-rendered by the templates):
+ *  - selection bubble → ll-excerpt requests (reply-driven status feedback);
+ *  - section geometry reports (ll-anchor-report, the viz-height channel
+ *    pattern: child→parent on load/scroll/resize/mutations, rAF-coalesced,
+ *    deduped by payload);
+ *  - section badges (ll-badges pushes, ll-locate click-back), jump + highlight
+ *    commands from the host.
+ * Colors ride the injected dsw tokens exclusively, so the live ll-theme
+ * channel re-skins the layer with zero coordination.
+ */
+export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): string {
+  const labelsJson = JSON.stringify(labels).replace(/<\//g, '<\\/')
+  const style = `<style id="ll-anchor-style">
+.ll-excerpt-bubble{position:fixed;z-index:2147483000;border:none;border-radius:14px;height:28px;padding:0 12px;font:inherit;font-size:12px;cursor:pointer;color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-shadow-lv2,0 2px 8px 0 rgba(0,0,0,0.12));outline:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,0.2));}
+.ll-excerpt-bubble:hover{background:var(--dsw-alias-interactive-bg-hover);}
+.ll-excerpt-bubble.ll-excerpt-wait{opacity:0.6;cursor:default;}
+.ll-excerpt-bubble.ll-excerpt-ok{color:var(--dsw-alias-state-success-primary);}
+.ll-excerpt-bubble.ll-excerpt-no{color:var(--dsw-alias-state-warn-primary);}
+.ll-sec-badge{display:inline-flex;align-items:center;margin-left:8px;padding:1px 8px;border:none;border-radius:999px;font:inherit;font-size:11px;line-height:18px;cursor:pointer;vertical-align:middle;color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary);}
+.ll-sec-badge:hover{background:var(--dsw-alias-interactive-bg-hover);}
+.ll-sec-hot{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px;border-radius:8px;}
+</style>`
+  const script = `<script id="ll-anchor-layer">(function () {
+  if (window.parent === window) return;
+  var LABELS = ${labelsJson};
+  var SECTION_SEL = '[id^="sec-"],[id^="backfill-"]';
+  var msgSeq = 0;
+  function post(data) { try { parent.postMessage(data, '*'); } catch (e) {} }
+
+  // section geometry reports (viz-height channel pattern: child -> parent)
+  var lastReport = '';
+  function titleOf(el) {
+    if (el.__llTitle !== undefined) return el.__llTitle;
+    var clone = el.cloneNode(true);
+    var drop = clone.querySelectorAll('.nh,.ll-sec-badge');
+    for (var i = 0; i < drop.length; i++) { if (drop[i].parentNode) drop[i].parentNode.removeChild(drop[i]); }
+    var t = (clone.textContent || '').replace(/\\s+/g, ' ').trim();
+    if (t.length > 48) t = t.slice(0, 48);
+    el.__llTitle = t;
+    return t;
+  }
+  function reportSections() {
+    var els = document.querySelectorAll(SECTION_SEL);
+    var sections = [];
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var r = el.getBoundingClientRect();
+      if (r.height <= 0) continue;
+      sections.push({ id: el.id, top: Math.round(r.top), height: Math.round(r.height), right: Math.round(r.right), title: titleOf(el) || null });
+    }
+    var json = JSON.stringify(sections);
+    if (json === lastReport) return;
+    lastReport = json;
+    post({ type: '${ANCHOR_REPORT_TYPE}', sections: sections });
+  }
+  var raf = 0;
+  function scheduleReport() {
+    if (raf) return;
+    raf = requestAnimationFrame(function () { raf = 0; reportSections(); });
+  }
+  window.addEventListener('load', scheduleReport);
+  window.addEventListener('resize', scheduleReport);
+  window.addEventListener('scroll', scheduleReport, true);
+  if (window.MutationObserver) new MutationObserver(scheduleReport).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+  scheduleReport();
+
+  // selection bubble -> ll-excerpt
+  var bubble = null, pending = null;
+  function hideBubble() {
+    if (bubble && bubble.parentNode) bubble.parentNode.removeChild(bubble);
+    bubble = null; pending = null;
+  }
+  function ensureBubble() {
+    if (bubble) return bubble;
+    bubble = document.createElement('button');
+    bubble.type = 'button';
+    bubble.className = 'll-excerpt-bubble';
+    // keep the selection alive while pressing the bubble
+    bubble.addEventListener('mousedown', function (ev) { ev.preventDefault(); ev.stopPropagation(); });
+    bubble.addEventListener('click', function () { doExcerpt(); });
+    document.body.appendChild(bubble);
+    return bubble;
+  }
+  function elementOf(node) { return node && node.nodeType === 1 ? node : (node ? node.parentNode : null); }
+  function walkUp(node, visit) {
+    var el = elementOf(node);
+    while (el && el.nodeType === 1) {
+      var out = visit(el);
+      if (out !== null) return out;
+      el = el.parentNode;
+    }
+    return null;
+  }
+  function sectionIdOf(node) {
+    return walkUp(node, function (el) {
+      if (el.id && (/^sec-/.test(el.id) || /^backfill-/.test(el.id))) return el.id;
+      return null;
+    });
+  }
+  function kpOf(node) {
+    return walkUp(node, function (el) {
+      var kp = el.getAttribute && el.getAttribute('data-kp');
+      return kp ? String(kp).slice(0, 32) : null;
+    });
+  }
+  function inFormControl(node) {
+    return walkUp(node, function (el) {
+      var tag = el.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ? true : null;
+    }) === true;
+  }
+  function settleSelection() {
+    var sel = window.getSelection && window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    var text = sel.toString();
+    if (!text || text.replace(/\\s+/g, '').length < 2 || text.length > 4000) return;
+    if (inFormControl(sel.anchorNode)) return;
+    var range = sel.getRangeAt(0);
+    var rect = range.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return;
+    var b = ensureBubble();
+    pending = { text: text, sectionId: sectionIdOf(range.startContainer), kp: kpOf(range.startContainer) };
+    b.className = 'll-excerpt-bubble';
+    b.textContent = LABELS.excerpt;
+    var left = Math.max(8, Math.min(rect.left + rect.width / 2 - 56, window.innerWidth - 120));
+    b.style.left = left + 'px';
+    b.style.top = (rect.top > 40 ? rect.top - 36 : rect.bottom + 8) + 'px';
+  }
+  document.addEventListener('mousedown', function (ev) {
+    if (bubble && ev.target && bubble.contains(ev.target)) return;
+    hideBubble();
+  }, true);
+  document.addEventListener('mouseup', function () { setTimeout(settleSelection, 10); });
+  document.addEventListener('keyup', function (ev) { if (ev && ev.shiftKey) setTimeout(settleSelection, 10); });
+
+  function doExcerpt() {
+    if (!pending || !bubble) return;
+    var payload = { type: '${EXCERPT_REQUEST_TYPE}', id: ++msgSeq, text: pending.text.slice(0, 2000), sectionId: pending.sectionId, kp: pending.kp };
+    var b = bubble;
+    var replied = false;
+    var onReply = function (ev) {
+      var d = ev && ev.data;
+      if (!d || d.type !== '${EXCERPT_REQUEST_TYPE}-result' || d.id !== payload.id) return;
+      replied = true;
+      window.removeEventListener('message', onReply);
+      b.className = 'll-excerpt-bubble ' + (d.ok ? 'll-excerpt-ok' : 'll-excerpt-no');
+      b.textContent = d.ok ? LABELS.done : LABELS.fail;
+      setTimeout(hideBubble, 1400);
+    };
+    window.addEventListener('message', onReply);
+    b.className = 'll-excerpt-bubble ll-excerpt-wait';
+    post(payload);
+    setTimeout(function () {
+      if (replied) return;
+      window.removeEventListener('message', onReply);
+      hideBubble();
+    }, 4000);
+  }
+
+  // badges + host commands (jump / highlight)
+  function renderBadges(counts) {
+    var els = document.querySelectorAll(SECTION_SEL);
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var n = (counts && counts[el.id]) || 0;
+      var host = el.querySelector('h1,h2,h3,h4');
+      var owner = host || el;
+      var badge = owner.getElementsByClassName('ll-sec-badge')[0];
+      if (n <= 0) { if (badge && badge.parentNode) badge.parentNode.removeChild(badge); continue; }
+      if (!badge) {
+        badge = document.createElement('button');
+        badge.type = 'button';
+        badge.className = 'll-sec-badge';
+        (function (sectionId) {
+          badge.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            post({ type: '${LOCATE_NOTICE_TYPE}', sectionId: sectionId });
+          });
+        })(el.id);
+        if (host) host.appendChild(badge);
+        else el.insertBefore(badge, el.firstChild);
+      }
+      badge.textContent = '\\uD83D\\uDDC2 ' + n;
+    }
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
+    if (d.type === '${BADGES_COMMAND_TYPE}' && d.counts && typeof d.counts === 'object') { renderBadges(d.counts); return; }
+    if (d.type === '${JUMP_COMMAND_TYPE}' && typeof d.sectionId === 'string') {
+      var target = document.getElementById(d.sectionId);
+      if (target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (d.type === '${HIGHLIGHT_COMMAND_TYPE}' && typeof d.sectionId === 'string') {
+      var hot = document.getElementById(d.sectionId);
+      if (hot) hot.classList.toggle('ll-sec-hot', !!d.on);
+    }
+  });
+})();</script>`
+  const layer = style + script
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, layer + '</body>')
+  return html + layer
+}
+
+// - quiz draft auto-save ---------------------------------------------------------
+
+/**
+ * In-progress quiz answers are volatile: they live in the srcDoc form only,
+ * so returning to dsh (or any srcDoc rebuild) wipes them. The injected draft
+ * layer streams the RAW form-control state to the host on every edit
+ * (debounced); the host caches it in localStorage keyed by workspace+doc.
+ * Submitting is the commit point: the existing ll-submit flow writes the
+ * answers json (the real data) and the draft is dropped — and a leftover
+ * draft is suppressed whenever an answers file already exists, so the
+ * submitted answers always win over any stale draft.
+ */
+export const DRAFT_SAVE_TYPE = 'll-draft-save'
+export const DRAFT_READ_TYPE = 'll-draft-read'
+export const DRAFT_CLEAR_TYPE = 'll-draft-clear'
+
+/** Drafts must stay small form state; larger payloads are rejected outright. */
+export const QUIZ_DRAFT_MAX_BYTES = 65536
+
+/** localStorage key for one quiz's draft (host-side cache). */
+export function quizDraftKey(root: string, docKey: string): string {
+  const norm = (path: string): string => path.replace(/\\/g, '/').replace(/\/+$/, '')
+  return 'learning-space:quiz-draft:' + norm(root) + ':' + norm(docKey)
+}
+
+/** Storage seam (localStorage in the app; a Map in tests). */
+export interface QuizDraftStore {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+}
+
+/** Read one draft; a corrupt entry is dropped on sight. */
+export function readQuizDraft(store: QuizDraftStore | null, key: string): unknown | null {
+  if (store === null) return null
+  try {
+    const raw = store.getItem(key)
+    if (raw === null) return null
+    return JSON.parse(raw) as unknown
+  } catch {
+    try { store.removeItem(key) } catch { /* unreachable in practice */ }
+    return null
+  }
+}
+
+/** Persist one draft (best-effort: quota/privacy errors swallow silently). */
+export function writeQuizDraft(store: QuizDraftStore | null, key: string, answers: unknown): void {
+  if (store === null) return
+  try { store.setItem(key, JSON.stringify(answers)) } catch { /* best-effort cache */ }
+}
+
+/** Drop one draft (on submit / when submitted answers exist). */
+export function clearQuizDraft(store: QuizDraftStore | null, key: string): void {
+  if (store === null) return
+  try { store.removeItem(key) } catch { /* best-effort cache */ }
+}
+
+/**
+ * Inject the quiz draft layer into a srcDoc document. Inert in chapter docs
+ * (no <form>); activates in quiz/baseline forms:
+ *  - input/change (capture, 500ms debounce) → ll-draft-save with the raw
+ *    control state (radio→value, checkbox→values[], text/select→value);
+ *  - on load → ll-draft-read; the host replies with the draft (or ok:false
+ *    when none / already submitted) and the layer re-applies it;
+ *  - on a successful ll-submit result → ll-draft-clear (the real answers
+ *    json takes over).
+ */
+export function injectQuizDraft(html: string, docKey: string): string {
+  const keyJson = JSON.stringify(docKey).replace(/</g, '\\u003c')
+  const script = `<script id="ll-quiz-draft">(function () {
+  if (window.parent === window) return;
+  var DOC_KEY = ${keyJson};
+  var form = document.querySelector('form');
+  if (!form) return;
+  var timer = 0, seq = 0;
+  function post(data) { try { parent.postMessage(data, '*'); } catch (e) {} }
+  function keyOf(c) { return c.name || c.id || ''; }
+  function typeOf(c) { return c.type || c.tagName.toLowerCase(); }
+  function collect() {
+    var out = {};
+    var els = form.querySelectorAll('input,textarea,select');
+    for (var i = 0; i < els.length; i++) {
+      var c = els[i], k = keyOf(c), t = typeOf(c);
+      if (!k) continue;
+      if (t === 'radio') { if (c.checked) out[k] = String(c.value); }
+      else if (t === 'checkbox') {
+        if (!Array.isArray(out[k])) out[k] = [];
+        if (c.checked) out[k].push(String(c.value));
+      }
+      else { out[k] = String(c.value); }
+    }
+    return out;
+  }
+  function save() { post({ type: '${DRAFT_SAVE_TYPE}', docKey: DOC_KEY, answers: collect() }); }
+  function scheduleSave() {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(save, 500);
+  }
+  document.addEventListener('input', scheduleSave, true);
+  document.addEventListener('change', scheduleSave, true);
+  function fire(c) { try { c.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} }
+  function apply(answers) {
+    var els = form.querySelectorAll('input,textarea,select');
+    for (var i = 0; i < els.length; i++) {
+      var c = els[i], k = keyOf(c), t = typeOf(c);
+      if (!k || !(k in answers)) continue;
+      var v = answers[k];
+      if (t === 'radio') { if (typeof v === 'string') c.checked = (String(c.value) === v); }
+      else if (t === 'checkbox') {
+        if (Array.isArray(v)) { c.checked = v.indexOf(String(c.value)) !== -1; }
+        else if (typeof v === 'boolean') { c.checked = v; }
+      }
+      else if (typeof v === 'string' && v.length <= 10000) {
+        if (c.value !== v) { c.value = v; fire(c); }
+      }
+    }
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.type === '${DRAFT_READ_TYPE}-result' && d.id === seq && d.ok && typeof d.content === 'string') {
+      try { apply(JSON.parse(d.content)); } catch (e) {}
+      return;
+    }
+    // a successful submit is the commit point: the real answers json exists
+    // now, the draft cache must go
+    if (d.type === 'll-submit-result' && d.ok) {
+      post({ type: '${DRAFT_CLEAR_TYPE}', docKey: DOC_KEY });
+    }
+  });
+  post({ type: '${DRAFT_READ_TYPE}', id: ++seq, docKey: DOC_KEY });
 })();</script>`
   if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, script + '</body>')
   return html + script
@@ -524,6 +932,16 @@ export type BridgeRequest =
   | { readonly kind: 'll-read'; readonly id: number; readonly path: string }
   | { readonly kind: 'll-submit'; readonly id: number; readonly quiz: string; readonly answers: unknown }
   | { readonly kind: 'll-open'; readonly id: number; readonly href: string; readonly absolute: boolean }
+  | { readonly kind: 'll-excerpt'; readonly id: number; readonly text: string; readonly sectionId: string | null; readonly kp: string | null }
+  | { readonly kind: 'll-draft-read'; readonly id: number; readonly docKey: string }
+
+/** Fire-and-forget notices from the anchor layer (no reply, no id — the
+ * report stream is high-frequency, the locate click needs no ack). */
+export type BridgeNotice =
+  | { readonly kind: 'll-anchor-report'; readonly sections: readonly SectionReportEntry[] }
+  | { readonly kind: 'll-locate'; readonly sectionId: string }
+  | { readonly kind: 'll-draft-save'; readonly docKey: string; readonly answers: unknown }
+  | { readonly kind: 'll-draft-clear'; readonly docKey: string }
 
 export interface BridgeReply {
   readonly type: string
@@ -560,6 +978,74 @@ export function parseBridgeMessage(event: MessageEvent, iframe: HTMLIFrameElemen
     const href = (data as { href: string }).href
     return { kind, id, href, absolute: /^https?:/i.test(href) }
   }
+  // ll-excerpt: selection→note request from the anchor layer. Section ids are
+  // validated down to null (document-level anchor) so a hostile document
+  // cannot smuggle payload junk through the bridge.
+  if (kind === EXCERPT_REQUEST_TYPE && typeof (data as { text?: unknown }).text === 'string') {
+    const sectionId = (data as { sectionId?: unknown }).sectionId
+    const kp = (data as { kp?: unknown }).kp
+    return {
+      kind,
+      id,
+      text: (data as { text: string }).text,
+      sectionId: typeof sectionId === 'string' && isSafeSectionId(sectionId) ? sectionId : null,
+      kp: typeof kp === 'string' ? kp.slice(0, 32) : null,
+    }
+  }
+  // ll-draft-read: quiz draft restore request (host replies with the cached
+  // raw form state, or ok:false when none / already submitted).
+  if (kind === DRAFT_READ_TYPE && typeof (data as { docKey?: unknown }).docKey === 'string') {
+    const docKey = (data as { docKey: string }).docKey
+    if (docKey.length > 0 && docKey.length <= 512) return { kind, id, docKey }
+    return null
+  }
+  return null
+}
+
+/**
+ * Validate an incoming MessageEvent as an anchor-layer NOTICE from our
+ * iframe: same source check as {@link parseBridgeMessage}, but for the
+ * reply-less traffic (section reports, badge locate clicks). Every entry is
+ * shape-checked — geometry must be finite numbers, ids charset-safe.
+ */
+export function parseBridgeNotice(event: MessageEvent, iframe: HTMLIFrameElement | null): BridgeNotice | null {
+  if (iframe === null || event.source !== iframe.contentWindow) return null
+  const data = event.data
+  if (typeof data !== 'object' || data === null) return null
+  const kind = (data as { type?: unknown }).type
+  if (kind === ANCHOR_REPORT_TYPE) {
+    const raw = (data as { sections?: unknown }).sections
+    if (!Array.isArray(raw)) return null
+    const sections: SectionReportEntry[] = []
+    for (const entry of raw) {
+      if (typeof entry !== 'object' || entry === null) return null
+      const record = entry as Record<string, unknown>
+      if (typeof record.id !== 'string' || !isSafeSectionId(record.id)) return null
+      const { top, height, right } = record
+      if (typeof top !== 'number' || typeof height !== 'number' || typeof right !== 'number') return null
+      if (!Number.isFinite(top) || !Number.isFinite(height) || !Number.isFinite(right)) return null
+      sections.push({ id: record.id, top, height, right, title: typeof record.title === 'string' ? record.title : null })
+    }
+    return { kind: ANCHOR_REPORT_TYPE, sections }
+  }
+  if (kind === LOCATE_NOTICE_TYPE) {
+    const sectionId = (data as { sectionId?: unknown }).sectionId
+    if (typeof sectionId !== 'string' || !isSafeSectionId(sectionId)) return null
+    return { kind: LOCATE_NOTICE_TYPE, sectionId }
+  }
+  // quiz draft notices: docKey must be a sane string, the draft payload an
+  // in-size-limit object (raw form state, never arrays/scalars).
+  const docKey = (data as { docKey?: unknown }).docKey
+  if (typeof docKey !== 'string' || docKey.length === 0 || docKey.length > 512) return null
+  if (kind === DRAFT_SAVE_TYPE) {
+    const answers = (data as { answers?: unknown }).answers
+    if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) return null
+    if (JSON.stringify(answers).length > QUIZ_DRAFT_MAX_BYTES) return null
+    return { kind: DRAFT_SAVE_TYPE, docKey, answers }
+  }
+  if (kind === DRAFT_CLEAR_TYPE) {
+    return { kind: DRAFT_CLEAR_TYPE, docKey }
+  }
   return null
 }
 
@@ -573,4 +1059,22 @@ export function bridgeReply(request: BridgeRequest, payload: { ok: boolean; cont
     ...(payload.path !== undefined ? { path: payload.path } : {}),
     ...(payload.error !== undefined ? { error: payload.error } : {}),
   }
+}
+
+// - host → iframe commands (anchor layer) ----------------------------------------
+
+/** Scroll the open document to a section (smooth; the template's
+ * scroll-margin-top keeps the heading clear of the viewport top). */
+export function postSectionJump(target: Window, sectionId: string): void {
+  target.postMessage({ type: JUMP_COMMAND_TYPE, sectionId }, '*')
+}
+
+/** Push per-section note counts so the layer can render 🗒 badges. */
+export function postSectionBadges(target: Window, counts: Record<string, number>): void {
+  target.postMessage({ type: BADGES_COMMAND_TYPE, counts }, '*')
+}
+
+/** Toggle the connection-hover highlight on one section. */
+export function postSectionHighlight(target: Window, sectionId: string, on: boolean): void {
+  target.postMessage({ type: HIGHLIGHT_COMMAND_TYPE, sectionId, on }, '*')
 }

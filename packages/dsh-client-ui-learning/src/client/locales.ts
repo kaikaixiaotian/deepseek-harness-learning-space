@@ -36,6 +36,15 @@ export const zh = {
   noteBranchMain: '主笔记',
   noteBranchNew: '新建分支',
   noteBranchInvalid: '分支名无效或已存在：仅限中英文、数字、- _，且不能与现有分支重复。',
+  excerptToNotes: '摘录到笔记',
+  excerptDone: '已加入笔记 ✓',
+  excerptFail: '该文档暂不支持笔记',
+  notesMapView: '总览',
+  notesEditView: '编辑',
+  notesMapEmpty: '暂无锚点关联——在章节中选中文字即可摘录到笔记',
+  notesMapAnchorUnit: '条锚点',
+  notesMapCoverLabel: '覆盖',
+  notesMapSectionUnit: '个小节',
   quizSubmitted: '已交卷：答案已保存到工作区',
 }
 
@@ -76,6 +85,15 @@ export const en: Record<LearningSpaceKey, string> = {
   noteBranchMain: 'Main note',
   noteBranchNew: 'New branch',
   noteBranchInvalid: 'Invalid or duplicate branch name: letters/digits/zh/-/_ only, and it must be new.',
+  excerptToNotes: 'Excerpt to note',
+  excerptDone: 'Added to note ✓',
+  excerptFail: 'No note target for this document',
+  notesMapView: 'Map',
+  notesEditView: 'Edit',
+  notesMapEmpty: 'No anchors yet — select text in the chapter to excerpt it into the note',
+  notesMapAnchorUnit: 'anchors',
+  notesMapCoverLabel: 'covering',
+  notesMapSectionUnit: 'sections',
   quizSubmitted: 'Submitted: answers saved to the workspace',
 }
 

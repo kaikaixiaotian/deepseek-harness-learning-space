@@ -38,6 +38,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: ^0.1.0-rc.7
         version: 0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.7(@deepseek-ai/cordis@4.0.1))
+      '@tiptap/core':
+        specifier: ^3.30.2
+        version: 3.30.2(@tiptap/pm@3.30.2)
       '@tiptap/extension-link':
         specifier: ^3.30.2
         version: 3.30.2(@tiptap/core@3.30.2(@tiptap/pm@3.30.2))(@tiptap/pm@3.30.2)

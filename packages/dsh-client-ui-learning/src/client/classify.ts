@@ -130,6 +130,15 @@ export function fileBaseName(path: string): string {
   return baseName(path)
 }
 
+/** Path relative to the workspace root (posix separators), or null when the
+ * path does not live inside the root. Anchors store this form so note files
+ * stay valid when the workspace directory moves. */
+export function workspaceRelativePath(root: string, path: string): string | null {
+  const normalizedRoot = normalize(root).replace(/\/+$/, '')
+  const normalizedPath = normalize(path)
+  return normalizedPath.startsWith(normalizedRoot + '/') ? normalizedPath.slice(normalizedRoot.length + 1) : null
+}
+
 /**
  * Note key for any note-taking document: chapters keep the chapter key
  * (existing note files stay put), while quizzes, stage totals, the baseline
