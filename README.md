@@ -132,7 +132,9 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\dsh-learning-space"     # 方式�
 ## 学习空间社区
 
 - qq群：781677692
-![img_3.png](png/img_3.png)
+<a href="png/img_3.png"><img src="png/img_3.png" alt="QQ 群 781677692 二维码" width="240"></a>
 
 ## 打赏作者
-![img_4.jpg](png/img_4.jpg)![img_5.jpg](png/img_5.jpg)
+
+<a href="png/img_4.jpg"><img src="png/img_4.jpg" alt="打赏作者" width="220"></a>
+<a href="png/img_5.jpg"><img src="png/img_5.jpg" alt="打赏作者" width="220"></a>
