@@ -18,7 +18,10 @@ import {
   postThemeUpdate,
   resolveDarkFlag,
   resolveRelative,
+  compatChapter,
+  compatViz,
   safeOpenTarget,
+  vizDirAlternates,
   vizPlaceholder,
   type ThemeSnapshot,
 } from '../src/client/bridge.ts'
@@ -203,6 +206,39 @@ describe('injectLinkGuard / vizPlaceholder / safeOpenTarget', () => {
     // form submits are neutralized (Enter-in-input must not reload the srcDoc)
     expect(script).toMatch(/addEventListener\('submit'.*preventDefault/s)
   })
+  it('vizDirAlternates swaps the locale-mapped demo dir both ways', () => {
+    expect(vizDirAlternates('./viz/阶段1-章01-arrow.html')).toEqual(['./viz/阶段1-章01-arrow.html', './演示/阶段1-章01-arrow.html'])
+    expect(vizDirAlternates('./演示/arrow.html')).toEqual(['./演示/arrow.html', './viz/arrow.html'])
+    // no viz segment → single candidate; the word inside a filename is untouched
+    expect(vizDirAlternates('./demos/vizor.html')).toEqual(['./demos/vizor.html'])
+  })
+
+  it('compatViz themes legacy demos and fixes the ratcheting height report; new-skeleton demos pass through', () => {
+    const legacy = '<html><head><style>.stage{background:#fafafa}</style></head><body><div class="stage"></div>' +
+      '<script>parent.postMessage({ __vizHeight: Math.ceil(document.documentElement.scrollHeight) }, "*")</script></body></html>'
+    const out = compatViz(legacy)
+    expect(out).toContain('ll-viz-compat')
+    expect(out).toContain('html.ll-dark body')
+    // the contrast self-healer rescues custom light chips (light bg + light ink)
+    expect(out).toContain('ll-viz-contrast')
+    expect(out).toContain("classList.contains('ll-dark')")
+    expect(out).toContain("el.style.color='rgb(24,26,30)'")
+    // the viewport-floored report is rewritten to the content-driven one
+    expect(out).toContain('document.body.scrollHeight+48')
+    expect(out).not.toContain('document.documentElement.scrollHeight')
+    // current-skeleton demos theme themselves — untouched
+    const modern = '<html><head><!-- learning-loop skeleton: viz --></head><body>x</body></html>'
+    expect(compatViz(modern)).toBe(modern)
+  })
+
+  it('compatChapter neutralizes the label-covering viz breakout; clean chapters pass through', () => {
+    const broken = '<html><head><style>ol.elements .el-body figure.viz{margin:10px 0 4px -166px;width:calc(100% + 166px);}</style></head><body></body></html>'
+    const out = compatChapter(broken)
+    expect(out).toContain('ll-chapter-compat')
+    expect(out).toContain('width:100% !important')
+    expect(compatChapter('<html><body>clean</body></html>')).toBe('<html><body>clean</body></html>')
+  })
+
   it('placeholder is a self-contained themed document with the escaped name', () => {
     const doc = vizPlaceholder('<demo & "x">')
     expect(doc).toContain('<!DOCTYPE html>')

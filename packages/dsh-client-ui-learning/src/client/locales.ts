@@ -35,7 +35,7 @@ export const zh = {
   noteClear: '清除格式',
   noteBranchMain: '主笔记',
   noteBranchNew: '新建分支',
-  noteBranchNamePlaceholder: '分支名…',
+  noteBranchInvalid: '分支名无效或已存在：仅限中英文、数字、- _，且不能与现有分支重复。',
   quizSubmitted: '已交卷：答案已保存到工作区',
 }
 
@@ -75,7 +75,7 @@ export const en: Record<LearningSpaceKey, string> = {
   noteClear: 'Clear format',
   noteBranchMain: 'Main note',
   noteBranchNew: 'New branch',
-  noteBranchNamePlaceholder: 'Branch name…',
+  noteBranchInvalid: 'Invalid or duplicate branch name: letters/digits/zh/-/_ only, and it must be new.',
   quizSubmitted: 'Submitted: answers saved to the workspace',
 }
 

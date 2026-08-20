@@ -431,7 +431,10 @@ Standalone, double-click-to-open, vanilla JS, no external deps. Follow this skel
     --accent-soft:color-mix(in srgb, var(--dsw-alias-state-business-tertiary,rgb(228,237,253)) calc(55% * var(--ll-frost)), transparent);
   }
   *{box-sizing:border-box;}
-  body { font-family:var(--font-sans); max-width: 760px; margin: 24px auto; padding: 0 16px; color:var(--text); background:var(--bg); }
+  /* margin as PADDING: body.scrollHeight then includes the spacing, so the
+     auto-height report measures the full content (a margin would be missed
+     and the frame would clip 48px) */
+  body { font-family:var(--font-sans); max-width: 760px; margin: 0 auto; padding: 24px 16px; color:var(--text); background:var(--bg); }
   h1 { font-size: 1.3rem; }
   .stage { /* 主可视化区域 */ min-height: 240px; border: 1px solid var(--hairline); border-radius: var(--r); padding: 16px; margin: 12px 0; background: var(--surface); }
   .controls { margin: 12px 0; }
@@ -493,7 +496,10 @@ Standalone, double-click-to-open, vanilla JS, no external deps. Follow this skel
   render();
 
   // —— 自适应高度：把本演示的实际高度 postMessage 给父页（章节页据此调整 iframe 高度，file:// 下也生效）——
-  function reportHeight(){ try { parent.postMessage({ __vizHeight: Math.ceil(document.documentElement.scrollHeight) }, '*'); } catch (e) {} }
+  /* report BODY scrollHeight, not documentElement's: the latter is floored
+     by the iframe's own viewport, so once the frame grows the report can
+     never shrink below it (frames ratchet upward and never come back) */
+  function reportHeight(){ try { parent.postMessage({ __vizHeight: Math.ceil(document.body.scrollHeight) }, '*'); } catch (e) {} }
   reportHeight();
   setTimeout(reportHeight, 150); setTimeout(reportHeight, 600);
   window.addEventListener('load', reportHeight);
@@ -535,7 +541,7 @@ Standalone, double-click-to-open, vanilla JS, no external deps. Follow this skel
 - A reset control.
 - Chinese labels matching chapter terminology.
 - The `render()` pattern: one function that reads `state` and repaints everything; interactions only mutate `state` then call `render()`. This avoids partial-update bugs.
-- **Auto-height (keep the snippet):** the skeleton's `reportHeight()` posts `document.documentElement.scrollHeight` to the parent on load / resize / DOM-change; the chapter page resizes the iframe to fit. Never delete it or hard-set a tiny iframe height — clipped controls are the #1 demo usability bug.
+- **Auto-height (keep the snippet):** the skeleton's `reportHeight()` posts `document.body.scrollHeight` to the parent on load / resize / DOM-change; the chapter page resizes the iframe to fit. NEVER report `documentElement.scrollHeight` — it is floored by the iframe's own viewport, so a grown frame can never shrink back. Never delete the reporter or hard-set a tiny iframe height — clipped controls are the #1 demo usability bug.
 - **Live theme channel (keep the snippet):** the `llApplyTheme` listener at the end of `<body>` re-skins the demo in place when the host pushes `{type:'ll-theme',...}` — the chapter page forwards these pushes into embedded demo iframes. Standalone (file://) never receives a message.
 
 ---
@@ -704,8 +710,11 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
   ol.elements .el-body th, ol.elements .el-body td{border:1px solid var(--hairline); padding:7px 10px; text-align:left; vertical-align:top;}
   ol.elements .el-body thead th{background:var(--skeleton); font-size:.85rem; font-weight:600;}
   ol.elements .el-body tbody tr:nth-child(even){background:var(--skeleton);}
-  /* ② slot: the embedded demo breaks out to the card's full width (label col 148px + 18px gap) */
-  ol.elements .el-body figure.viz{margin:10px 0 4px -166px; width:calc(100% + 166px); max-width:calc(100% + 166px);}
+  /* ② slot: the demo stays INSIDE the body column — a negative-margin
+     "full-bleed" breakout pulled the figure across the ①-⑥ label column
+     and covered the element labels (overlapping content bug). If a wider
+     stage is needed, widen the grid's body column instead. */
+  ol.elements .el-body figure.viz{margin:10px 0 4px; width:100%; max-width:100%;}
   /* observe-points list under the ② demo */
   ul.observe{margin:8px 0 0; padding-left:0; list-style:none; color:var(--muted); font-size:.92rem;}
   ul.observe li{margin:3px 0; padding-left:26px; position:relative;}
@@ -818,6 +827,11 @@ Standalone, double-click-to-open, vanilla, no deps. For chapter docs and master 
       <li><span class="el-label">② 直观演示</span><div class="el-body">
         <figure class="viz">
           <figcaption>🖼️ 交互演示：&lt;机制名&gt;</figcaption>
+          <!-- ⚠️ viz-dir locale rule: the demo dir is locale-mapped (en: viz/, zh: 演示/
+               — see naming.md). The iframe src AND the viz-open href MUST use the
+               WORKSPACE's dir name, and the demo files must be WRITTEN there: a zh
+               workspace writes demos to 演示/ and references ./演示/….html — a
+               mismatch shows the "演示文件缺失" placeholder in the learning space. -->
           <iframe src="./viz/stageN-chXX-<kp-slug>.html" loading="lazy" title="&lt;演示名&gt;"></iframe>
           <a class="viz-open" href="./viz/stageN-chXX-<kp-slug>.html" target="_blank">在新标签页打开 ↗</a>
         </figure>

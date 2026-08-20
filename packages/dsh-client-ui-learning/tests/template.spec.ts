@@ -147,9 +147,17 @@ describe('viz skeleton', () => {
   })
   it('ships the auto-height reporter and the live theme listener', () => {
     expect(viz).toContain('__vizHeight')
+    // body-based report: documentElement.scrollHeight is floored by the
+    // frame's own viewport — a grown frame could never shrink back
+    expect(viz).toContain('document.body.scrollHeight')
+    expect(viz).not.toContain('documentElement.scrollHeight')
     expect(viz).toContain('llApplyTheme')
     expect(viz).toContain("d.type !== 'll-theme'")
     expect(viz).toContain("type: 'll-theme-ack'")
+  })
+  it('keeps the demo inside the body column — no breakout across the label column', () => {
+    expect(readMode).not.toContain('-166px')
+    expect(readMode).toMatch(/figure\.viz\{margin:10px 0 4px; width:100%;/)
   })
 })
 

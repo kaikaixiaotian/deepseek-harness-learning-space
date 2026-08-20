@@ -20,7 +20,7 @@ import css from './space.module.css'
 import { fileBaseName, isSafeNoteBranch, noteBranchesOf, noteKeyOf } from './classify.ts'
 import { closeLearningSpace, learningSpaceState, subscribeLearningSpace } from './store.ts'
 import { getLearningFace, subscribeLearningFace, unwrap, type LearningEntry, type LearningNamespaceFace, type LearningWorkspaceView } from './remote.ts'
-import { bridgeReply, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectLinkGuard, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, postThemeUpdate, resolveRelative, snapshotTheme, vizPlaceholder, type ThemeSnapshot } from './bridge.ts'
+import { bridgeReply, compatChapter, compatViz, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectLinkGuard, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, postThemeUpdate, resolveRelative, snapshotTheme, vizDirAlternates, vizPlaceholder, type ThemeSnapshot } from './bridge.ts'
 import type { NS } from './locales.ts'
 
 export interface LearningSpaceProps extends PropsLocale<typeof NS>, GlobalStandardProps {}
@@ -395,17 +395,23 @@ function Viewer(props: ViewerProps) {
       let objectUrls: string[] = []
       try {
         const inlined = await inlineRelativeIframes(content.text, async rel => {
-          const abs = resolveRelative(baseDir, rel)
-          try {
-            const result = await unwrap(await learning.readFile(sid, workspace.root, abs), 'readFile')
-            return result.content
-          } catch {
-            // Unreadable demo: a themed placeholder blob, NEVER the original
-            // relative src — under srcDoc it resolves against the app origin
-            // and paints the dsh SPA inside the chapter.
-            return vizPlaceholder(rel)
+          // Viz dir names are locale-mapped (en viz / zh 演示) and generated
+          // chapters sometimes reference the other locale's path — try every
+          // alternate before giving up on a demo.
+          for (const candidate of vizDirAlternates(rel)) {
+            const abs = resolveRelative(baseDir, candidate)
+            try {
+              const result = await unwrap(await learning.readFile(sid, workspace.root, abs), 'readFile')
+              return result.content
+            } catch {
+              // try the next alternate
+            }
           }
-        }, undefined, vizHtml => injectTheme(vizHtml, theme))
+          // Unreadable demo: a themed placeholder blob, NEVER the original
+          // relative src — under srcDoc it resolves against the app origin
+          // and paints the dsh SPA inside the chapter.
+          return vizPlaceholder(rel)
+        }, undefined, vizHtml => injectTheme(compatViz(vizHtml), theme))
         html = injectTheme(inlined.html, theme)
         objectUrls = inlined.objectUrls
       } catch {
@@ -414,7 +420,7 @@ function Viewer(props: ViewerProps) {
         // link) rather than rendering an unthemed page or an eternal spinner.
         html = injectTheme(content.text, theme)
       }
-      html = injectLinkGuard(html)
+      html = injectLinkGuard(compatChapter(html))
       if (cancelled) {
         for (const url of objectUrls) URL.revokeObjectURL(url)
         return
@@ -719,21 +725,28 @@ function NotesPanel(props: NotesPanelProps) {
 
   // Focus retry: autoFocus can be eaten when the iframe or another panel
   // steals focus in the same frame — refocus once on the next tick so the
-  // branch input is actually editable (reported: ＋ click "did nothing").
+  // branch input is actually editable.
   useEffect(() => {
     if (!creating) return
     const timer = window.setTimeout(() => { branchInputRef.current?.focus() }, 0)
     return () => { window.clearTimeout(timer) }
   }, [creating])
 
-  const createBranch = (): void => {
+  /**
+   * Confirm the pending branch: Enter and blur (clicking blank space) both
+   * land here. Empty closes silently; an invalid/duplicate name keeps the
+   * input open with a red outline (silent no-ops read as "broken button").
+   */
+  const confirmBranch = (): void => {
     const name = newBranch.trim()
-    // Silent no-ops read as "the button is broken" — flag invalid names on
-    // the input instead (empty/unsafe/duplicate keep the editor open).
-    if (!isSafeNoteBranch(name) || name === '' || branches.includes(name)) {
+    if (name === '') {
+      setCreating(false)
+      setNewBranch('')
+      return
+    }
+    if (!isSafeNoteBranch(name) || branches.includes(name)) {
       setBranchError(true)
       window.setTimeout(() => { setBranchError(false) }, 1600)
-      branchInputRef.current?.focus()
       return
     }
     setBranchError(false)
@@ -756,8 +769,6 @@ function NotesPanel(props: NotesPanelProps) {
     </button>
   )
 
-  const chain = editor === null ? null : editor.chain().focus()
-
   return (
     <aside className={css.notes_card + ' ' + css.ls_card_major + ' ' + css.ls_card} data-dsh-surface data-dsh-inputbar>
       <div className={css.notesBody}>
@@ -765,19 +776,6 @@ function NotesPanel(props: NotesPanelProps) {
           <div className={css.notesHead}>
             <span className={css.notesTitle}>{t('notes')}</span>
             <span className={css.spacer} />
-            {/* Second entry point for branch creation: the rail ＋ sits at
-                the card's right edge, where theme-plugin seam layers may
-                interfere — a header button keeps the flow reachable. */}
-            {noteKey !== null && (
-              <button
-                type='button'
-                className={css.notesHeadBtn}
-                title={t('noteBranchNew')}
-                onClick={() => { setCreating(true) }}
-              >
-                ＋ {t('noteBranchNew')}
-              </button>
-            )}
             <span className={css.notesStatus + (status === 'saved' ? ' ' + css.notesStatusSaved : '')}>{statusLabel}</span>
           </div>
           {noteKey === null ? (
@@ -786,20 +784,24 @@ function NotesPanel(props: NotesPanelProps) {
             <>
               <style>{NOTES_CONTENT_CSS}</style>
               <div className={css.notesToolbar}>
-                {toolbarButton('↶', 'undo', () => { chain?.undo().run() })}
-                {toolbarButton('↷', 'redo', () => { chain?.redo().run() })}
+                {/* every handler builds a FRESH chain at click time — a chain
+                    captured at render binds the editor state of that render,
+                    and applying it later throws "mismatched transaction"
+                    (stale after content swaps / debounced saves) */}
+                {toolbarButton('↶', 'undo', () => { editor?.chain().focus().undo().run() })}
+                {toolbarButton('↷', 'redo', () => { editor?.chain().focus().redo().run() })}
                 <span className={css.toolSep} />
-                {toolbarButton(<b>B</b>, 'bold', () => { chain?.toggleBold().run() }, editor?.isActive('bold') === true)}
-                {toolbarButton(<i>I</i>, 'italic', () => { chain?.toggleItalic().run() }, editor?.isActive('italic') === true)}
-                {toolbarButton(<u>U</u>, 'underline', () => { chain?.toggleUnderline().run() }, editor?.isActive('underline') === true)}
-                {toolbarButton(<s>S</s>, 'strike', () => { chain?.toggleStrike().run() }, editor?.isActive('strike') === true)}
-                {toolbarButton('H2', 'heading 2', () => { chain?.toggleHeading({ level: 2 }).run() }, editor?.isActive('heading', { level: 2 }) === true)}
-                {toolbarButton('H3', 'heading 3', () => { chain?.toggleHeading({ level: 3 }).run() }, editor?.isActive('heading', { level: 3 }) === true)}
-                {toolbarButton(t('noteUl'), 'bullet list', () => { chain?.toggleBulletList().run() }, editor?.isActive('bulletList') === true)}
-                {toolbarButton(t('noteOl'), 'ordered list', () => { chain?.toggleOrderedList().run() }, editor?.isActive('orderedList') === true)}
-                {toolbarButton(t('noteCode'), 'code block', () => { chain?.toggleCodeBlock().run() }, editor?.isActive('codeBlock') === true)}
-                {toolbarButton(t('noteQuote'), 'quote', () => { chain?.toggleBlockquote().run() }, editor?.isActive('blockquote') === true)}
-                {toolbarButton('—', 'divider', () => { chain?.setHorizontalRule().run() })}
+                {toolbarButton(<b>B</b>, 'bold', () => { editor?.chain().focus().toggleBold().run() }, editor?.isActive('bold') === true)}
+                {toolbarButton(<i>I</i>, 'italic', () => { editor?.chain().focus().toggleItalic().run() }, editor?.isActive('italic') === true)}
+                {toolbarButton(<u>U</u>, 'underline', () => { editor?.chain().focus().toggleUnderline().run() }, editor?.isActive('underline') === true)}
+                {toolbarButton(<s>S</s>, 'strike', () => { editor?.chain().focus().toggleStrike().run() }, editor?.isActive('strike') === true)}
+                {toolbarButton('H2', 'heading 2', () => { editor?.chain().focus().toggleHeading({ level: 2 }).run() }, editor?.isActive('heading', { level: 2 }) === true)}
+                {toolbarButton('H3', 'heading 3', () => { editor?.chain().focus().toggleHeading({ level: 3 }).run() }, editor?.isActive('heading', { level: 3 }) === true)}
+                {toolbarButton(t('noteUl'), 'bullet list', () => { editor?.chain().focus().toggleBulletList().run() }, editor?.isActive('bulletList') === true)}
+                {toolbarButton(t('noteOl'), 'ordered list', () => { editor?.chain().focus().toggleOrderedList().run() }, editor?.isActive('orderedList') === true)}
+                {toolbarButton(t('noteCode'), 'code block', () => { editor?.chain().focus().toggleCodeBlock().run() }, editor?.isActive('codeBlock') === true)}
+                {toolbarButton(t('noteQuote'), 'quote', () => { editor?.chain().focus().toggleBlockquote().run() }, editor?.isActive('blockquote') === true)}
+                {toolbarButton('—', 'divider', () => { editor?.chain().focus().setHorizontalRule().run() })}
                 <span className={css.toolSep} />
                 {toolbarButton('🔗', 'link', () => {
                   if (editor === null) return
@@ -807,7 +809,7 @@ function NotesPanel(props: NotesPanelProps) {
                   const href = window.prompt('URL', 'https://')
                   if (href !== null && href !== '') editor.chain().focus().extendMarkRange('link').setLink({ href }).run()
                 }, editor?.isActive('link') === true)}
-                {toolbarButton(t('noteClear'), 'clear format', () => { chain?.unsetAllMarks().clearNodes().run() })}
+                {toolbarButton(t('noteClear'), 'clear format', () => { editor?.chain().focus().unsetAllMarks().clearNodes().run() })}
               </div>
               <div className={css.notesScroll}>
                 {editor === null ? null : <EditorContent editor={editor} />}
@@ -835,11 +837,14 @@ function NotesPanel(props: NotesPanelProps) {
                   autoFocus
                   className={css.branchNewInput + (branchError ? ' ' + css.branchNewInputError : '')}
                   value={newBranch}
-                  placeholder={t('noteBranchNamePlaceholder')}
+                  title={t('noteBranchInvalid')}
+                  placeholder='…'
                   onChange={event => { setNewBranch(event.target.value) }}
-                  onBlur={() => { setCreating(false); setNewBranch('') }}
+                  // blur = clicking blank space: CONFIRMS (the old code
+                  // discarded the input here, which read as a dead button)
+                  onBlur={() => { confirmBranch() }}
                   onKeyDown={event => {
-                    if (event.key === 'Enter') { createBranch() }
+                    if (event.key === 'Enter') { confirmBranch() }
                     if (event.key === 'Escape') { setCreating(false); setNewBranch('') }
                   }}
                 />
