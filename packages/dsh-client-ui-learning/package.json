@@ -1,7 +1,7 @@
 {
   "name": "dsh-client-ui-learning",
   "description": "学习空间 UI —— learning-loop 的浏览器界面：专属打开卡片 + 全屏三栏学习空间（目录/章节测验查看/笔记）",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publishConfig": {
     "access": "public"
   },
