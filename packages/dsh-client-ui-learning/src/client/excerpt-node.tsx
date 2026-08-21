@@ -49,11 +49,15 @@ export interface ExcerptOptions {
   readonly onCrumbClick: (target: ExcerptCrumbTarget) => void
 }
 
-function dataAttr(name: string): { parseHTML: (element: HTMLElement) => string | null; renderHTML: (attrs: Record<string, unknown>) => Record<string, string> } {
+/** Attribute plumbing between the tiptap attr (`key`, e.g. 'anchorId') and
+ * its DOM form (`name`, e.g. 'data-ll-anchor'). renderHTML receives the attrs
+ * keyed by the ATTRIBUTE NAME — reading by the DOM name silently drops the
+ * attribute from every saved file. */
+function dataAttr(key: string, name: string): { parseHTML: (element: HTMLElement) => string | null; renderHTML: (attrs: Record<string, unknown>) => Record<string, string> } {
   return {
     parseHTML: element => element.getAttribute(name),
     renderHTML: attrs => {
-      const value = attrs[name]
+      const value = attrs[key]
       return typeof value === 'string' && value !== '' ? { [name]: value } : {}
     },
   }
@@ -104,12 +108,12 @@ export const ExcerptBlock = Node.create<ExcerptOptions>({
 
   addAttributes() {
     return {
-      anchorId: { default: null, ...dataAttr('data-ll-anchor') },
-      chapterKey: { default: null, ...dataAttr('data-ll-chapter') },
-      sectionId: { default: null, ...dataAttr('data-ll-section') },
-      kp: { default: null, ...dataAttr('data-ll-kp') },
-      docTitle: { default: null, ...dataAttr('data-ll-title') },
-      docPath: { default: null, ...dataAttr('data-ll-path') },
+      anchorId: { default: null, ...dataAttr('anchorId', 'data-ll-anchor') },
+      chapterKey: { default: null, ...dataAttr('chapterKey', 'data-ll-chapter') },
+      sectionId: { default: null, ...dataAttr('sectionId', 'data-ll-section') },
+      kp: { default: null, ...dataAttr('kp', 'data-ll-kp') },
+      docTitle: { default: null, ...dataAttr('docTitle', 'data-ll-title') },
+      docPath: { default: null, ...dataAttr('docPath', 'data-ll-path') },
       blockIndex: {
         default: null,
         parseHTML: element => {

@@ -16,6 +16,7 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Underline from '@tiptap/extension-underline'
+import Blockquote from '@tiptap/extension-blockquote'
 import css from './space.module.css'
 import { fileBaseName, isSafeNoteBranch, noteBranchesOf, noteKeyOf, stemOf, workspaceRelativePath } from './classify.ts'
 import { buildAnchorMetaHtml, collectAnchorsFromDoc, stripAnchorMeta, type NoteAnchor, type SectionInfo } from './anchors.ts'
@@ -858,12 +859,16 @@ function NotesPanel(props: NotesPanelProps) {
     extensions: [
       // tiptap 3 StarterKit already bundles link and underline; disable the
       // built-ins so our configured copies don't register duplicate names.
-      StarterKit.configure({ link: false, underline: false }),
+      // blockquote is ALSO disabled: DOM parsing takes the FIRST rule whose
+      // tag matches, and StarterKit's generic blockquote rule would swallow
+      // the excerpt markup on reload (saved notes degraded to plain quotes) —
+      // the plain blockquote is re-registered BELOW the excerpt node so its
+      // rule only sees blockquotes the excerpt rule declined.
+      StarterKit.configure({ link: false, underline: false, blockquote: false }),
       Link.configure({ openOnClick: false }),
       Underline,
-      // Anchored excerpt blocks — registered LAST so their specific
-      // parse rule (blockquote[data-ll-anchor]) wins over StarterKit's
-      // generic blockquote rule (later extensions take precedence).
+      // Anchored excerpt blocks — their attribute-constrained parse rule
+      // (blockquote[data-ll-anchor]) must come BEFORE the plain quote's.
       ExcerptBlock.configure({
         sectionTitleOf: sectionId => sectionsRef.current.find(section => section.id === sectionId)?.title ?? null,
         onCrumbClick: target => {
@@ -878,6 +883,7 @@ function NotesPanel(props: NotesPanelProps) {
           }
         },
       }),
+      Blockquote,
     ],
     content: '',
     editorProps: { attributes: { class: 'll-notes-content', style: 'min-height:100%;outline:none;' } },
