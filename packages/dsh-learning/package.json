@@ -1,7 +1,7 @@
 {
   "name": "dsh-learning",
   "description": "Learning-space host service: workspace discovery, file reads, and per-chapter notes IO for the dsh learning space UI",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
