@@ -61,10 +61,8 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Below the full-width header card: the three content cards in one row.
- * relative — the P1 connection layer (SVG) spans viewer + notes from here. */
+/* Below the full-width header card: the three content cards in one row. */
 .body_row {
-  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -627,51 +625,6 @@
 /* connection-hover / badge-locate highlight on an excerpt block */
 .excerptHot {
   box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
-}
-
-@keyframes excerptFlashKF {
-  0% { box-shadow: 0 0 0 3px var(--dsw-alias-state-business-primary); }
-  100% { box-shadow: 0 0 0 3px transparent; }
-}
-
-.excerptFlash {
-  animation: excerptFlashKF 1.2s var(--ds-ease-in-out, ease) 2;
-}
-
-/* - P1 connection canvas (note↔chapter bezier overlay) ---------------------- */
-
-/* Spans the whole body row; the layer itself never takes pointer events,
-   each path re-enables them along its stroke only. Clipped: off-screen
-   lines are hidden by the redraw rule, this is the belt against spills. */
-.anchorLayer {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-/* Connection curves ride the business accent at FULL opacity (a highlight,
-   not a watermark); hover thickens, glass themes add the glow. */
-.anchorPath {
-  fill: none;
-  stroke: var(--dsw-alias-state-business-primary);
-  stroke-width: 2;
-  pointer-events: stroke;
-  cursor: pointer;
-}
-
-.anchorPathHot {
-  stroke-width: 3;
-}
-
-/* glass themes: connections pick up a soft glow (ambient-matched accent) */
-:global(html[data-dsh-aqua]) .anchorPath {
-  filter: drop-shadow(0 0 3px var(--dsw-alias-state-business-primary));
-}
-
-:global(html[data-dsh-aqua]) .anchorPathHot {
-  filter: drop-shadow(0 0 6px var(--dsw-alias-state-business-primary));
 }
 
 /* - P1 relation map (notes card, map view) ---------------------------------- */

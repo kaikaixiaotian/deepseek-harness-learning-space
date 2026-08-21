@@ -102,6 +102,14 @@ describe('notes safety', () => {
     await expect(service.writeNote('s1', workspace, 'a b', 'x')).rejects.toThrow('invalid chapter key')
   })
 
+  it('round-trips zh-slugged chapter keys (章节/阶段1-章01-注意力机制.html)', async () => {
+    const zhWorkspace = join(area, 'react-学习')
+    await mkdir(zhWorkspace, { recursive: true })
+    await writeFile(join(zhWorkspace, 'meta.json'), JSON.stringify({ locale: 'zh' }), 'utf8')
+    await expect(service.writeNote('s1', zhWorkspace, 'stage1-ch01-注意力机制', '<p>摘录</p>')).resolves.toEqual({ saved: true })
+    await expect(service.readNote('s1', zhWorkspace, 'stage1-ch01-注意力机制')).resolves.toEqual({ content: '<p>摘录</p>' })
+  })
+
   it('returns empty content when the workspace root does not exist', async () => {
     await expect(service.readNote('s1', join(area, 'missing-learning'), 'stage1-ch01')).resolves.toEqual({ content: '' })
   })

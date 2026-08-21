@@ -108,6 +108,9 @@ describe('noteKeyOf', () => {
     expect(noteKeyOf('C:/w/react-学习/章节/阶段1-章01-入门.html')).toBe('stage1-ch01-入门')
     expect(noteKeyOf('C:/w/react-learning/chapters/stage1-ch01-intro.html')).toBe('stage1-ch01-intro')
     expect(noteKeyOf('C:/w/react-learning/chapters/stage1-ch01-intro_v2.html')).toBe('stage1-ch01-intro')
+    // zh slugs derive zh keys — the HOST accepts them (same charset family
+    // as note branches); regression for the 保存失败：invalid chapter key report
+    expect(noteKeyOf('C:/w/react-学习/章节/阶段1-章01-注意力机制.html')).toBe('stage1-ch01-注意力机制')
   })
   it('gives quizzes and stage totals their OWN note keys in both locales', () => {
     expect(noteKeyOf('C:/w/react-learning/quizzes/stage1-ch01-quiz.html')).toBe('stage1-ch01-quiz')

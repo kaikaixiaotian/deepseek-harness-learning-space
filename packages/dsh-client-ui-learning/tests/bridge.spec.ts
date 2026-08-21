@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   ANCHOR_REPORT_TYPE,
-  BLOCK_WATCH_TYPE,
+  BLOCK_BADGES_TYPE,
+  BLOCK_LOCATE_TYPE,
   bridgeReply,
   clearQuizDraft,
   dirOf,
@@ -22,12 +23,9 @@ import {
   injectTheme,
   inlineRelativeIframes,
   isThemeAck,
-  LOCATE_NOTICE_TYPE,
   parseBridgeMessage,
   parseBridgeNotice,
-  postBlockWatch,
-  postSectionBadges,
-  postSectionHighlight,
+  postBlockBadges,
   postSectionJump,
   postThemeUpdate,
   quizDraftKey,
@@ -341,35 +339,28 @@ describe('parseBridgeNotice (anchor layer)', () => {
     ({ data, source }) as unknown as MessageEvent
   const iframe = { contentWindow: {} } as unknown as HTMLIFrameElement
 
-  it('accepts section reports from the owning iframe only, with shape-checked entries', () => {
-    const sections = [{ id: 'sec-core', top: 12, height: 300, right: 640, title: '核心概念' }, { id: 'sec-pit', top: 400, height: 80, right: 640, title: null }]
+  it('accepts section lists from the owning iframe only, with shape-checked entries', () => {
+    const sections = [{ id: 'sec-core', title: '核心概念' }, { id: 'sec-pit', title: null }]
     expect(parseBridgeNotice(makeEvent({ type: ANCHOR_REPORT_TYPE, sections }, iframe.contentWindow), iframe))
-      .toEqual({ kind: ANCHOR_REPORT_TYPE, report: { sections, blocks: [] } })
-    const withBlocks = parseBridgeNotice(makeEvent({ type: ANCHOR_REPORT_TYPE, sections, blocks: [{ i: 5, top: 30, right: 600 }, { i: 8, top: 90, right: 600 }] }, iframe.contentWindow), iframe)
-    expect(withBlocks?.kind === ANCHOR_REPORT_TYPE ? withBlocks.report.blocks : null)
-      .toEqual([{ index: 5, top: 30, right: 600 }, { index: 8, top: 90, right: 600 }])
+      .toEqual({ kind: ANCHOR_REPORT_TYPE, sections })
     expect(parseBridgeNotice(makeEvent({ type: ANCHOR_REPORT_TYPE, sections }, { other: 1 }), iframe)).toBeNull()
   })
-  it('rejects malformed reports and unsafe ids', () => {
+  it('rejects malformed section lists', () => {
     for (const bad of [
       { type: ANCHOR_REPORT_TYPE, sections: 'nope' },
-      { type: ANCHOR_REPORT_TYPE, sections: [{ id: 'sec-core', top: 'x', height: 1, right: 1 }] },
-      { type: ANCHOR_REPORT_TYPE, sections: [{ id: '"><script>', top: 1, height: 1, right: 1 }] },
-      { type: ANCHOR_REPORT_TYPE, sections: [{ id: 'sec-core', top: Number.NaN, height: 1, right: 1 }] },
+      { type: ANCHOR_REPORT_TYPE, sections: [{ id: '"><script>' }] },
+      { type: ANCHOR_REPORT_TYPE, sections: [{ id: 'sec-core', title: 42 }] },
       { type: 'other' },
-      { type: ANCHOR_REPORT_TYPE, sections: [], blocks: 'nope' },
-      { type: ANCHOR_REPORT_TYPE, sections: [], blocks: [{ i: -1, top: 1, right: 1 }] },
-      { type: ANCHOR_REPORT_TYPE, sections: [], blocks: [{ i: 1.5, top: 1, right: 1 }] },
-      { type: ANCHOR_REPORT_TYPE, sections: [], blocks: [{ i: 1, top: 'x', right: 1 }] },
     ]) {
       expect(parseBridgeNotice(makeEvent(bad, iframe.contentWindow), iframe)).toBeNull()
     }
   })
-  it('accepts ll-locate clicks with safe ids only', () => {
-    expect(parseBridgeNotice(makeEvent({ type: LOCATE_NOTICE_TYPE, sectionId: 'sec-intro' }, iframe.contentWindow), iframe))
-      .toEqual({ kind: LOCATE_NOTICE_TYPE, sectionId: 'sec-intro' })
-    expect(parseBridgeNotice(makeEvent({ type: LOCATE_NOTICE_TYPE, sectionId: 'a b' }, iframe.contentWindow), iframe)).toBeNull()
-    expect(parseBridgeNotice(makeEvent({ type: LOCATE_NOTICE_TYPE }, iframe.contentWindow), iframe)).toBeNull()
+  it('accepts ll-block-locate clicks with sane indexes only', () => {
+    expect(parseBridgeNotice(makeEvent({ type: BLOCK_LOCATE_TYPE, index: 5 }, iframe.contentWindow), iframe))
+      .toEqual({ kind: BLOCK_LOCATE_TYPE, index: 5 })
+    expect(parseBridgeNotice(makeEvent({ type: BLOCK_LOCATE_TYPE, index: -1 }, iframe.contentWindow), iframe)).toBeNull()
+    expect(parseBridgeNotice(makeEvent({ type: BLOCK_LOCATE_TYPE, index: 1.5 }, iframe.contentWindow), iframe)).toBeNull()
+    expect(parseBridgeNotice(makeEvent({ type: BLOCK_LOCATE_TYPE }, iframe.contentWindow), iframe)).toBeNull()
   })
 })
 
@@ -390,10 +381,11 @@ describe('anchor layer injection + host commands', () => {
   })
   it('layer script carries the report channel, the bubble protocol, badges and commands', () => {
     const out = injectAnchorLayer('<body></body>', LABELS)
-    // section reports: viz-height pattern (rAF-coalesced child→parent posts)
+    // section LIST report: rAF-coalesced load/mutation notice (the doc is
+    // static — no per-frame geometry stream anymore)
     expect(out).toContain("type: 'll-anchor-report'")
-    expect(out).toMatch(/addEventListener\('scroll'.*true/s)
     expect(out).toContain('requestAnimationFrame')
+    expect(out).toContain('MutationObserver')
     // excerpt bubble: request + typed reply handling + selection capture
     expect(out).toContain("type: 'll-excerpt'")
     expect(out).toContain("'ll-excerpt-result'")
@@ -404,13 +396,17 @@ describe('anchor layer injection + host commands', () => {
     // connection canvas stays empty
     expect(out).toContain('compareDocumentPosition')
     expect(out).toMatch(/m\.contains\(el\)/)
-    // badges / jump / highlight / block-watch command listeners
-    expect(out).toContain("d.type === 'll-badges'")
+    // markers / jump command listeners; the connection canvas is GONE — no
+    // geometry stream, no hover-highlight channel
+    expect(out).toContain("d.type === '" + BLOCK_BADGES_TYPE + "'")
+    expect(out).toContain("type: '" + BLOCK_LOCATE_TYPE + "'")
     expect(out).toContain("d.type === 'll-jump'")
-    expect(out).toContain("d.type === 'll-highlight'")
-    expect(out).toContain("d.type === '" + BLOCK_WATCH_TYPE + "'")
     expect(out).toContain('blockIndexAt')
     expect(out).toContain('scrollIntoView')
+    expect(out).not.toContain('ll-highlight')
+    expect(out).not.toContain('ll-blocks-watch')
+    // the section report is a load-time LIST (id + title), not per-frame
+    expect(out).not.toMatch(/addEventListener\('scroll'/)
     // styles ride the dsw tokens exclusively (never a raw hex)
     const style = out.slice(out.indexOf('ll-anchor-style'), out.indexOf('</style>'))
     expect(style).toContain('var(--dsw-alias-state-business-primary')
@@ -420,14 +416,10 @@ describe('anchor layer injection + host commands', () => {
     const posted: { data: unknown; origin: string }[] = []
     const target = { postMessage: (data: unknown, origin: string) => { posted.push({ data, origin }) } } as unknown as Window
     postSectionJump(target, 'sec-core')
-    postSectionBadges(target, { 'sec-core': 2 })
-    postSectionHighlight(target, 'sec-intro', true)
-    postBlockWatch(target, [5, 8])
+    postBlockBadges(target, [{ index: 5, count: 2 }, { index: 8, count: 1 }])
     expect(posted).toEqual([
       { data: { type: 'll-jump', sectionId: 'sec-core' }, origin: '*' },
-      { data: { type: 'll-badges', counts: { 'sec-core': 2 } }, origin: '*' },
-      { data: { type: 'll-highlight', sectionId: 'sec-intro', on: true }, origin: '*' },
-      { data: { type: 'll-blocks-watch', indexes: [5, 8] }, origin: '*' },
+      { data: { type: 'll-block-badges', blocks: [{ i: 5, n: 2 }, { i: 8, n: 1 }] }, origin: '*' },
     ])
   })
 })

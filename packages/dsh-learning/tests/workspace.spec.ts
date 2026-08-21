@@ -94,7 +94,14 @@ describe('notes helpers', () => {
   })
   it('validates chapter keys', () => {
     expect(isSafeChapterKey('stage1-ch01-intro')).toBe(true)
+    // zh-slugged chapters derive zh keys (章节/阶段1-章01-注意力机制.html) —
+    // same charset family as branches and quiz stems
+    expect(isSafeChapterKey('stage1-ch01-注意力机制')).toBe(true)
+    expect(isSafeChapterKey('错题复盘')).toBe(true)
     expect(isSafeChapterKey('../../etc')).toBe(false)
     expect(isSafeChapterKey('a b')).toBe(false)
+    expect(isSafeChapterKey('a/b')).toBe(false)
+    expect(isSafeChapterKey('a.b')).toBe(false)
+    expect(isSafeChapterKey('')).toBe(false)
   })
 })

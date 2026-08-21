@@ -200,9 +200,12 @@ export function noteBranchesOf(chapterKey: string, fileNames: readonly string[])
   return ['', ...list]
 }
 
-/** Validate a chapter key before it ever touches the filesystem. */
+/** Validate a chapter key before it ever touches the filesystem. Chinese
+ * slugs are legitimate chapter names (章节/阶段1-章01-注意力机制.html →
+ * 'stage1-ch01-注意力机制'), so the charset matches the branch/quiz-stem
+ * guards: ASCII or zh word chars — never separators, dots or escapes. */
 export function isSafeChapterKey(chapterKey: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(chapterKey)
+  return /^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_-]*$/.test(chapterKey)
 }
 
 /** Validate a note branch name; '' = default branch (ASCII or zh word chars). */

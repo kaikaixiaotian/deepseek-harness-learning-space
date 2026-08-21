@@ -521,35 +521,15 @@ export function stripBaseTags(html: string): string {
  * documents carry an opaque null origin). */
 export const EXCERPT_REQUEST_TYPE = 'll-excerpt'
 export const ANCHOR_REPORT_TYPE = 'll-anchor-report'
-export const LOCATE_NOTICE_TYPE = 'll-locate'
 export const JUMP_COMMAND_TYPE = 'll-jump'
-export const BADGES_COMMAND_TYPE = 'll-badges'
-export const HIGHLIGHT_COMMAND_TYPE = 'll-highlight'
-export const BLOCK_WATCH_TYPE = 'll-blocks-watch'
+export const BLOCK_BADGES_TYPE = 'll-block-badges'
+export const BLOCK_LOCATE_TYPE = 'll-block-locate'
 
 /** One section of the open document as reported by the anchor layer
- * (viewport-relative coords inside the iframe; `right` is the element's right
- * edge — the connection endpoints anchor there). */
+ * (id + display title; the list feeds breadcrumbs and the relation map). */
 export interface SectionReportEntry {
   readonly id: string
-  readonly top: number
-  readonly height: number
-  readonly right: number
   readonly title: string | null
-}
-
-/** One watched text block (paragraph-level anchor target): the host names
- * the block indexes it cares about (from note anchors), the layer reports
- * their live geometry every frame alongside the sections. */
-export interface BlockReportEntry {
-  readonly index: number
-  readonly top: number
-  readonly right: number
-}
-
-export interface AnchorReport {
-  readonly sections: readonly SectionReportEntry[]
-  readonly blocks: readonly BlockReportEntry[]
 }
 
 /** Bubble labels — injected as literals because the iframe cannot reach the
@@ -566,11 +546,13 @@ export interface AnchorLayerLabels {
  * already-generated workspace document gains the abilities without being
  * re-rendered by the templates):
  *  - selection bubble → ll-excerpt requests (reply-driven status feedback);
- *  - section geometry reports (ll-anchor-report, the viz-height channel
- *    pattern: child→parent on load/scroll/resize/mutations, rAF-coalesced,
- *    deduped by payload);
- *  - section badges (ll-badges pushes, ll-locate click-back), jump + highlight
- *    commands from the host.
+ *  - the section LIST (id + title, ll-anchor-report) for breadcrumbs and the
+ *    relation map — the document is static, so it fires on load/mutations
+ *    only, never per scroll frame;
+ *  - LINE-LEVEL note markers (ll-block-badges pushes): one 🗒 tag pinned to
+ *    the left of the FIRST LINE of every excerpted paragraph, click reports
+ *    ll-block-locate so the host focuses the matching note block;
+ *  - ll-jump scrolls the document to a section (breadcrumb / map clicks).
  * Colors ride the injected dsw tokens exclusively, so the live ll-theme
  * channel re-skins the layer with zero coordination.
  */
@@ -582,15 +564,16 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
 .ll-excerpt-bubble.ll-excerpt-wait{opacity:0.6;cursor:default;}
 .ll-excerpt-bubble.ll-excerpt-ok{color:var(--dsw-alias-state-success-primary);}
 .ll-excerpt-bubble.ll-excerpt-no{color:var(--dsw-alias-state-warn-primary);}
-.ll-sec-badge{display:inline-flex;align-items:center;margin-left:8px;padding:1px 8px;border:none;border-radius:999px;font:inherit;font-size:11px;line-height:18px;cursor:pointer;vertical-align:middle;color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary);}
-.ll-sec-badge:hover{background:var(--dsw-alias-interactive-bg-hover);}
-.ll-sec-hot{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px;border-radius:8px;}
+/* line-level note marker: pinned to the left of the block's FIRST line */
+.ll-block-mark{position:relative;}
+.ll-block-badge{position:absolute;left:-26px;top:0;height:20px;padding:0 5px;border:none;border-radius:8px;font:inherit;font-size:11px;line-height:20px;cursor:pointer;user-select:none;color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary);}
+.ll-block-badge:hover{background:var(--dsw-alias-interactive-bg-hover);}
 </style>`
   const script = `<script id="ll-anchor-layer">(function () {
   if (window.parent === window) return;
   var LABELS = ${labelsJson};
   var SECTION_SEL = '[id^="sec-"],[id^="backfill-"]';
-  // paragraph-level anchor targets: the connection precision unit ("行")
+  // paragraph-level anchor targets: the marker precision unit ("行")
   var BLOCK_SEL = 'p,li,h3,h4,pre,blockquote,td,dd,dt';
   var blockCache = null;
   function allBlocks() {
@@ -605,18 +588,6 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
     blockCache = out;
     return out;
   }
-  // watched blocks: the host names the indexes (from note anchors), the
-  // report stream then carries their live geometry — documents are static,
-  // so an index resolved at excerpt time keeps pointing at the same line.
-  var watched = null;
-  function resolveWatched(indexes) {
-    var all = allBlocks();
-    watched = [];
-    for (var i = 0; i < indexes.length; i++) {
-      var idx = indexes[i];
-      if (idx >= 0 && idx < all.length) watched.push({ i: idx, el: all[idx] });
-    }
-  }
   function blockIndexAt(node) {
     var el = elementOf(node);
     var block = el && el.closest ? el.closest(BLOCK_SEL) : null;
@@ -628,12 +599,13 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
   var msgSeq = 0;
   function post(data) { try { parent.postMessage(data, '*'); } catch (e) {} }
 
-  // section geometry reports (viz-height channel pattern: child -> parent)
+  // section list report (titles only — the doc is static, so this is a
+  // load/mutation-time notice, not a per-frame geometry stream)
   var lastReport = '';
   function titleOf(el) {
     if (el.__llTitle !== undefined) return el.__llTitle;
     var clone = el.cloneNode(true);
-    var drop = clone.querySelectorAll('.nh,.ll-sec-badge');
+    var drop = clone.querySelectorAll('.nh,.ll-sec-badge,.ll-block-badge');
     for (var i = 0; i < drop.length; i++) { if (drop[i].parentNode) drop[i].parentNode.removeChild(drop[i]); }
     var t = (clone.textContent || '').replace(/\\s+/g, ' ').trim();
     if (t.length > 48) t = t.slice(0, 48);
@@ -643,24 +615,11 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
   function reportSections() {
     var els = document.querySelectorAll(SECTION_SEL);
     var sections = [];
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      var r = el.getBoundingClientRect();
-      if (r.height <= 0) continue;
-      sections.push({ id: el.id, top: Math.round(r.top), height: Math.round(r.height), right: Math.round(r.right), title: titleOf(el) || null });
-    }
-    var blocks = [];
-    if (watched) {
-      for (var j = 0; j < watched.length; j++) {
-        var rb = watched[j].el.getBoundingClientRect();
-        if (rb.height <= 0) continue;
-        blocks.push({ i: watched[j].i, top: Math.round(rb.top), right: Math.round(rb.right) });
-      }
-    }
-    var json = JSON.stringify({ s: sections, b: blocks });
+    for (var i = 0; i < els.length; i++) sections.push({ id: els[i].id, title: titleOf(els[i]) || null });
+    var json = JSON.stringify(sections);
     if (json === lastReport) return;
     lastReport = json;
-    post({ type: '${ANCHOR_REPORT_TYPE}', sections: sections, blocks: blocks });
+    post({ type: '${ANCHOR_REPORT_TYPE}', sections: sections });
   }
   var raf = 0;
   function scheduleReport() {
@@ -668,10 +627,48 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
     raf = requestAnimationFrame(function () { raf = 0; reportSections(); });
   }
   window.addEventListener('load', scheduleReport);
-  window.addEventListener('resize', scheduleReport);
-  window.addEventListener('scroll', scheduleReport, true);
-  if (window.MutationObserver) new MutationObserver(scheduleReport).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+  if (window.MutationObserver) new MutationObserver(scheduleReport).observe(document.documentElement, { childList: true, subtree: true });
   scheduleReport();
+
+  // line-level note markers (ll-block-badges pushes from the host)
+  var marked = [];
+  function renderBlockBadges(list) {
+    var wanted = {};
+    for (var j = 0; j < list.length; j++) wanted[list[j].i] = list[j].n;
+    for (var k = marked.length - 1; k >= 0; k--) {
+      var m = marked[k];
+      if (wanted[m.i] !== undefined) continue;
+      if (m.badge.parentNode) m.badge.parentNode.removeChild(m.badge);
+      m.el.classList.remove('ll-block-mark');
+      marked.splice(k, 1);
+    }
+    var all = allBlocks();
+    for (var j = 0; j < list.length; j++) {
+      var idx = list[j].i;
+      if (!(idx >= 0 && idx < all.length)) continue;
+      var el = all[idx];
+      var entry = null;
+      for (var k = 0; k < marked.length; k++) if (marked[k].i === idx) { entry = marked[k]; break; }
+      if (!entry) {
+        var badge = document.createElement('button');
+        badge.type = 'button';
+        badge.className = 'll-block-badge';
+        badge.setAttribute('aria-hidden', 'true');
+        (function (index) {
+          badge.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            post({ type: '${BLOCK_LOCATE_TYPE}', index: index });
+          });
+        })(idx);
+        el.classList.add('ll-block-mark');
+        el.appendChild(badge);
+        entry = { i: idx, el: el, badge: badge };
+        marked.push(entry);
+      }
+      entry.badge.textContent = wanted[idx] > 1 ? '\\uD83D\\uDDC2 ' + wanted[idx] : '\\uD83D\\uDDC2';
+    }
+  }
 
   // selection bubble -> ll-excerpt
   var bubble = null, pending = null;
@@ -780,55 +777,22 @@ export function injectAnchorLayer(html: string, labels: AnchorLayerLabels): stri
     }, 4000);
   }
 
-  // badges + host commands (jump / highlight)
-  function renderBadges(counts) {
-    var els = document.querySelectorAll(SECTION_SEL);
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      var n = (counts && counts[el.id]) || 0;
-      var host = el.querySelector('h1,h2,h3,h4');
-      var owner = host || el;
-      var badge = owner.getElementsByClassName('ll-sec-badge')[0];
-      if (n <= 0) { if (badge && badge.parentNode) badge.parentNode.removeChild(badge); continue; }
-      if (!badge) {
-        badge = document.createElement('button');
-        badge.type = 'button';
-        badge.className = 'll-sec-badge';
-        (function (sectionId) {
-          badge.addEventListener('click', function (ev) {
-            ev.preventDefault();
-            ev.stopPropagation();
-            post({ type: '${LOCATE_NOTICE_TYPE}', sectionId: sectionId });
-          });
-        })(el.id);
-        if (host) host.appendChild(badge);
-        else el.insertBefore(badge, el.firstChild);
-      }
-      badge.textContent = '\\uD83D\\uDDC2 ' + n;
-    }
-  }
+  // host commands: line markers + section jump
   window.addEventListener('message', function (ev) {
     var d = ev && ev.data;
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
-    if (d.type === '${BLOCK_WATCH_TYPE}' && d.indexes && typeof d.indexes === 'object') {
+    if (d.type === '${BLOCK_BADGES_TYPE}' && d.blocks && typeof d.blocks === 'object') {
       var list = [];
-      for (var q = 0; q < d.indexes.length; q++) {
-        if (typeof d.indexes[q] === 'number' && d.indexes[q] >= 0) list.push(d.indexes[q]);
+      for (var q = 0; q < d.blocks.length; q++) {
+        var b = d.blocks[q];
+        if (b && typeof b.i === 'number' && b.i >= 0 && typeof b.n === 'number' && b.n > 0) list.push({ i: b.i, n: b.n });
       }
-      blockCache = null;
-      resolveWatched(list.slice(0, 200));
-      scheduleReport();
+      renderBlockBadges(list.slice(0, 200));
       return;
     }
-    if (d.type === '${BADGES_COMMAND_TYPE}' && d.counts && typeof d.counts === 'object') { renderBadges(d.counts); return; }
     if (d.type === '${JUMP_COMMAND_TYPE}' && typeof d.sectionId === 'string') {
       var target = document.getElementById(d.sectionId);
       if (target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-    if (d.type === '${HIGHLIGHT_COMMAND_TYPE}' && typeof d.sectionId === 'string') {
-      var hot = document.getElementById(d.sectionId);
-      if (hot) hot.classList.toggle('ll-sec-hot', !!d.on);
     }
   });
 })();</script>`
@@ -1020,8 +984,8 @@ export type BridgeRequest =
 /** Fire-and-forget notices from the anchor layer (no reply, no id — the
  * report stream is high-frequency, the locate click needs no ack). */
 export type BridgeNotice =
-  | { readonly kind: 'll-anchor-report'; readonly report: AnchorReport }
-  | { readonly kind: 'll-locate'; readonly sectionId: string }
+  | { readonly kind: 'll-anchor-report'; readonly sections: readonly SectionReportEntry[] }
+  | { readonly kind: 'll-block-locate'; readonly index: number }
   | { readonly kind: 'll-draft-save'; readonly docKey: string; readonly answers: unknown }
   | { readonly kind: 'll-draft-clear'; readonly docKey: string }
 
@@ -1105,30 +1069,16 @@ export function parseBridgeNotice(event: MessageEvent, iframe: HTMLIFrameElement
       if (typeof entry !== 'object' || entry === null) return null
       const record = entry as Record<string, unknown>
       if (typeof record.id !== 'string' || !isSafeSectionId(record.id)) return null
-      const { top, height, right } = record
-      if (typeof top !== 'number' || typeof height !== 'number' || typeof right !== 'number') return null
-      if (!Number.isFinite(top) || !Number.isFinite(height) || !Number.isFinite(right)) return null
-      sections.push({ id: record.id, top, height, right, title: typeof record.title === 'string' ? record.title : null })
+      if (record.title !== undefined && record.title !== null && typeof record.title !== 'string') return null
+      sections.push({ id: record.id, title: typeof record.title === 'string' ? record.title : null })
     }
-    const rawBlocks = (data as { blocks?: unknown }).blocks
-    const blocks: BlockReportEntry[] = []
-    if (rawBlocks !== undefined) {
-      if (!Array.isArray(rawBlocks)) return null
-      for (const entry of rawBlocks) {
-        if (typeof entry !== 'object' || entry === null) return null
-        const record = entry as Record<string, unknown>
-        if (typeof record.i !== 'number' || !Number.isInteger(record.i) || record.i < 0 || record.i > 100000) return null
-        if (typeof record.top !== 'number' || typeof record.right !== 'number') return null
-        if (!Number.isFinite(record.top) || !Number.isFinite(record.right)) return null
-        blocks.push({ index: record.i, top: record.top, right: record.right })
-      }
-    }
-    return { kind: ANCHOR_REPORT_TYPE, report: { sections, blocks } }
+    return { kind: ANCHOR_REPORT_TYPE, sections }
   }
-  if (kind === LOCATE_NOTICE_TYPE) {
-    const sectionId = (data as { sectionId?: unknown }).sectionId
-    if (typeof sectionId !== 'string' || !isSafeSectionId(sectionId)) return null
-    return { kind: LOCATE_NOTICE_TYPE, sectionId }
+  // line-marker click: which content block (document-order index) to focus
+  if (kind === BLOCK_LOCATE_TYPE) {
+    const index = (data as { index?: unknown }).index
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 100000) return null
+    return { kind: BLOCK_LOCATE_TYPE, index }
   }
   // quiz draft notices: docKey must be a sane string, the draft payload an
   // in-size-limit object (raw form state, never arrays/scalars).
@@ -1166,18 +1116,8 @@ export function postSectionJump(target: Window, sectionId: string): void {
   target.postMessage({ type: JUMP_COMMAND_TYPE, sectionId }, '*')
 }
 
-/** Push per-section note counts so the layer can render 🗒 badges. */
-export function postSectionBadges(target: Window, counts: Record<string, number>): void {
-  target.postMessage({ type: BADGES_COMMAND_TYPE, counts }, '*')
-}
-
-/** Name the block indexes the connection layer needs live geometry for
- * (paragraph-level anchor targets; re-sent whenever the anchor set changes). */
-export function postBlockWatch(target: Window, indexes: readonly number[]): void {
-  target.postMessage({ type: BLOCK_WATCH_TYPE, indexes }, '*')
-}
-
-/** Toggle the connection-hover highlight on one section. */
-export function postSectionHighlight(target: Window, sectionId: string, on: boolean): void {
-  target.postMessage({ type: HIGHLIGHT_COMMAND_TYPE, sectionId, on }, '*')
+/** Push the line-level note markers: one 🗒 tag per excerpted content block
+ * (index + anchor count); empty list clears them all. */
+export function postBlockBadges(target: Window, blocks: ReadonlyArray<{ index: number; count: number }>): void {
+  target.postMessage({ type: BLOCK_BADGES_TYPE, blocks: blocks.map(entry => ({ i: entry.index, n: entry.count })) }, '*')
 }

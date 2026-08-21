@@ -18,12 +18,11 @@ import Link from '@tiptap/extension-link'
 import Underline from '@tiptap/extension-underline'
 import css from './space.module.css'
 import { fileBaseName, isSafeNoteBranch, noteBranchesOf, noteKeyOf, stemOf, workspaceRelativePath } from './classify.ts'
-import { anchorCounts, buildAnchorMetaHtml, collectAnchorsFromDoc, stripAnchorMeta, type NoteAnchor, type SectionInfo } from './anchors.ts'
+import { buildAnchorMetaHtml, collectAnchorsFromDoc, stripAnchorMeta, type NoteAnchor, type SectionInfo } from './anchors.ts'
 import { appendExcerpt, ExcerptBlock } from './excerpt-node.tsx'
 import { closeLearningSpace, learningSpaceState, subscribeLearningSpace } from './store.ts'
 import { getLearningFace, subscribeLearningFace, unwrap, type LearningEntry, type LearningNamespaceFace, type LearningWorkspaceView } from './remote.ts'
-import { bridgeReply, clearQuizDraft, compatChapter, compatViz, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectAnchorLayer, injectLinkGuard, injectQuizDraft, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, parseBridgeNotice, postBlockWatch, postSectionBadges, postSectionJump, postThemeUpdate, quizDraftKey, readQuizDraft, resolveRelative, snapshotTheme, stripBaseTags, vizDirAlternates, vizPlaceholder, writeQuizDraft, type AnchorReport, type QuizDraftStore, type ThemeSnapshot } from './bridge.ts'
-import { ConnectionLayer } from './connections.tsx'
+import { bridgeReply, clearQuizDraft, compatChapter, compatViz, dirOf, floorThemeSnapshot, inlineRelativeIframes, injectAnchorLayer, injectLinkGuard, injectQuizDraft, injectTheme, LIVE_THEME_ACK_TYPE, parseBridgeMessage, parseBridgeNotice, postBlockBadges, postSectionJump, postThemeUpdate, quizDraftKey, readQuizDraft, resolveRelative, snapshotTheme, stripBaseTags, vizDirAlternates, vizPlaceholder, writeQuizDraft, type QuizDraftStore, type SectionReportEntry, type ThemeSnapshot } from './bridge.ts'
 import { NotesMap } from './notes-map.tsx'
 import type { NS } from './locales.ts'
 
@@ -127,14 +126,12 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
   }, [space.open])
 
   // - P1 anchor plumbing ------------------------------------------------------
-  // The iframe seat + notes scroller are overlay-owned so the connection
-  // layer can read both geometries; the panels register their handlers
-  // through refs (fresh per render, no re-subscription churn).
+  // The iframe seat + notes scroller are overlay-owned; the panels register
+  // their handlers through refs (fresh per render, no re-subscription churn).
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const notesScrollRef = useRef<HTMLDivElement | null>(null)
-  const locateRef = useRef<((sectionId: string) => void) | null>(null)
+  const locateRef = useRef<((blockIndex: number) => void) | null>(null)
   const excerptHandleRef = useRef<((payload: ExcerptPayload) => boolean) | null>(null)
-  const reportRef = useRef<AnchorReport>({ sections: [], blocks: [] })
   const sectionsSigRef = useRef('')
   const [sectionInfos, setSectionInfos] = useState<readonly SectionInfo[]>([])
   const [pendingExcerpt, setPendingExcerpt] = useState<PendingExcerpt | null>(null)
@@ -145,21 +142,18 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
     if (target !== undefined && target !== null) postSectionJump(target, sectionId)
   }
 
-  const handleSections = (report: AnchorReport): void => {
-    // Live geometry (sections + watched blocks) feeds the connection layer
-    // through the ref (per scroll frame, zero re-renders); React state keeps
-    // only id/title and updates when the section LIST changes (document
-    // switch), not on every scroll.
-    reportRef.current = report
-    const sig = JSON.stringify(report.sections.map(section => [section.id, section.title]))
+  const handleSections = (sections: readonly SectionReportEntry[]): void => {
+    // id/title state for breadcrumbs + the relation map (the document is
+    // static, so this changes only on document switch)
+    const sig = JSON.stringify(sections.map(section => [section.id, section.title]))
     if (sig !== sectionsSigRef.current) {
       sectionsSigRef.current = sig
-      setSectionInfos(report.sections.map(section => ({ id: section.id, title: section.title })))
+      setSectionInfos(sections.map(section => ({ id: section.id, title: section.title })))
     }
   }
 
-  const handleLocate = (sectionId: string): void => {
-    locateRef.current?.(sectionId)
+  const handleLocate = (blockIndex: number): void => {
+    locateRef.current?.(blockIndex)
   }
 
   const handleExcerpt = (payload: ExcerptPayload): boolean => {
@@ -224,7 +218,6 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
               📖 {t('notes')}
             </button>
           </div>
-          {/* relative so the connection layer's SVG can span viewer + notes */}
           <div className={css.body_row}>
             <TreePanel key={workspace.root} workspace={workspace} learning={learning} sid={sid} selected={selected} onSelect={setSelected} t={t} />
             <Viewer
@@ -257,14 +250,6 @@ export function LearningSpaceOverlay(props: LearningSpaceProps) {
                 t={t}
               />
             )}
-            <ConnectionLayer
-              iframeRef={iframeRef}
-              reportRef={reportRef}
-              notesScrollRef={notesScrollRef}
-              chapterKey={openNoteKey}
-              active={notesOpen}
-              onJump={jumpToSection}
-            />
           </div>
         </div>
       )}
@@ -413,10 +398,10 @@ interface ViewerProps {
   readonly iframeRef: React.MutableRefObject<HTMLIFrameElement | null>
   /** Apply an excerpt request; false = no note target for the open document. */
   readonly onExcerpt: (payload: ExcerptPayload) => boolean
-  /** Section reports from the anchor layer (id/title state + live geometry). */
-  readonly onSections: (report: AnchorReport) => void
-  /** Badge click inside the iframe: focus the matching note block. */
-  readonly onLocate: (sectionId: string) => void
+  /** Section reports from the anchor layer (id/title state). */
+  readonly onSections: (sections: readonly SectionReportEntry[]) => void
+  /** Line-marker click inside the iframe: focus the matching note block. */
+  readonly onLocate: (blockIndex: number) => void
   readonly t: LearningSpaceProps['t']
 }
 
@@ -640,9 +625,9 @@ function Viewer(props: ViewerProps) {
       const notice = parseBridgeNotice(event, iframeRef.current)
       if (notice !== null) {
         if (notice.kind === 'll-anchor-report') {
-          onSectionsRef.current(notice.report)
-        } else if (notice.kind === 'll-locate') {
-          onLocateRef.current(notice.sectionId)
+          onSectionsRef.current(notice.sections)
+        } else if (notice.kind === 'll-block-locate') {
+          onLocateRef.current(notice.index)
         } else if (notice.kind === 'll-draft-save') {
           // Cache the raw quiz form state; docKey guards against a stale
           // layer racing a chapter switch (save landing on the new doc).
@@ -820,11 +805,11 @@ interface NotesPanelProps {
   readonly sections: readonly SectionInfo[]
   /** Jump into the open document's section (scrolls the middle iframe). */
   readonly jumpToSection: (sectionId: string) => void
-  /** The iframe seat (badge pushes) and the notes scroller (locate scrolls). */
+  /** The iframe seat (marker pushes) and the notes scroller (locate scrolls). */
   readonly iframeRef: React.MutableRefObject<HTMLIFrameElement | null>
   readonly notesScrollRef: React.MutableRefObject<HTMLDivElement | null>
   /** Host→panel handler seats, assigned by this panel on every render. */
-  readonly locateRef: React.MutableRefObject<((sectionId: string) => void) | null>
+  readonly locateRef: React.MutableRefObject<((blockIndex: number) => void) | null>
   readonly excerptHandleRef: React.MutableRefObject<((payload: ExcerptPayload) => boolean) | null>
   /** A queued excerpt, applied once the target note content is in place. */
   readonly pendingExcerpt: PendingExcerpt | null
@@ -900,20 +885,25 @@ function NotesPanel(props: NotesPanelProps) {
   }, [])
 
   const saveRef = useRef<(key: string, value: string, retry?: boolean) => void>(() => {})
-  // Line-level anchors need the iframe to report the exact blocks they point
-  // at; the watch set is pushed whenever the current chapter's anchor set
-  // changes (sig-guarded: typing without anchor churn sends nothing).
-  const lastWatchSigRef = useRef('')
-  const pushBlockWatch = (collected: readonly NoteAnchor[]): void => {
+  // Line-level markers ride the anchors: one 🗒 tag per excerpted block,
+  // pushed whenever the current chapter's anchor set changes (sig-guarded:
+  // typing without anchor churn sends nothing).
+  const lastBadgesSigRef = useRef('')
+  const pushBlockBadges = (collected: readonly NoteAnchor[]): void => {
     const target = props.iframeRef.current?.contentWindow
     if (target === undefined || target === null) return
-    const indexes = [...new Set(collected
-      .filter(anchor => anchor.chapterKey === noteKey && anchor.blockIndex !== null)
-      .map(anchor => anchor.blockIndex as number))].sort((a, b) => a - b)
-    const sig = (noteKey ?? '') + ':' + JSON.stringify(indexes)
-    if (sig === lastWatchSigRef.current) return
-    lastWatchSigRef.current = sig
-    postBlockWatch(target, indexes)
+    const counts = new Map<number, number>()
+    for (const anchor of collected) {
+      if (anchor.chapterKey !== noteKey || anchor.blockIndex === null) continue
+      counts.set(anchor.blockIndex, (counts.get(anchor.blockIndex) ?? 0) + 1)
+    }
+    const blocks = [...counts.entries()]
+      .map(([index, count]) => ({ index, count }))
+      .sort((a, b) => a.index - b.index)
+    const sig = (noteKey ?? '') + ':' + JSON.stringify(blocks)
+    if (sig === lastBadgesSigRef.current) return
+    lastBadgesSigRef.current = sig
+    postBlockBadges(target, blocks)
   }
   saveRef.current = (key: string, value: string, retry = false): void => {
     if (learning === null) { setStatus('error'); return }
@@ -952,13 +942,9 @@ function NotesPanel(props: NotesPanelProps) {
     const body = editor.getHTML()
     pendingRef.current = { key: activeKeyRef.current, value: collected.length > 0 ? buildAnchorMetaHtml(collected) + body : body }
     setAnchors(collected)
-    // Section badges reflect the note live: push the fresh per-section counts
-    // into the open document (cheap message; the layer re-renders badges).
-    const badgeTarget = props.iframeRef.current?.contentWindow
-    if (badgeTarget !== undefined && badgeTarget !== null) {
-      postSectionBadges(badgeTarget, anchorCounts(collected, noteKey ?? ''))
-    }
-    pushBlockWatch(collected)
+    // Line markers reflect the note live: push the per-block tag set into
+    // the open document (cheap message; the layer re-renders the markers).
+    pushBlockBadges(collected)
     setStatus('saving')
     if (timerRef.current !== null) window.clearTimeout(timerRef.current)
     timerRef.current = window.setTimeout(() => {
@@ -989,21 +975,27 @@ function NotesPanel(props: NotesPanelProps) {
     let cancelled = false
     void (async () => {
       const keyNote = key === null ? '' : key.split(KEY_SEP)[0]
-      const result = await learning.readNote(sid, workspace.root, keyNote, branch === '' ? undefined : branch)
+      let body = ''
+      try {
+        const result = await learning.readNote(sid, workspace.root, keyNote, branch === '' ? undefined : branch)
+        if (!cancelled && result.ok) {
+          // Drop a leading anchor-index comment before handing the body to
+          // the editor (the body is the source of truth; the index rebuilds
+          // on save).
+          body = stripAnchorMeta(result.value.content).body
+        }
+      } catch {
+        // read failures land on an empty-but-usable editor (saving still
+        // works; a loadedKey is still published so queued excerpts apply)
+      }
       if (cancelled) return
-      // Drop a leading anchor-index comment before handing the body to the
-      // editor (the body is the source of truth; the index rebuilds on save).
-      editor?.commands.setContent(result.ok ? stripAnchorMeta(result.value.content).body : '', { emitUpdate: false })
+      editor?.commands.setContent(body, { emitUpdate: false })
       const collected = editor === null ? [] : collectAnchorsFromDoc(editor.getJSON())
       setAnchors(collected)
       setLoadedKey(key)
-      // The freshly loaded branch owns the badges now (chapter/branch switch
-      // rebuilt the srcDoc, so no stale counts can linger in the iframe).
-      const badgeTarget = props.iframeRef.current?.contentWindow
-      if (badgeTarget !== undefined && badgeTarget !== null) {
-        postSectionBadges(badgeTarget, anchorCounts(collected, noteKey ?? ''))
-      }
-      pushBlockWatch(collected)
+      // The freshly loaded branch owns the markers now (chapter/branch switch
+      // rebuilt the srcDoc, so no stale tags can linger in the iframe).
+      pushBlockBadges(collected)
     })()
     return () => { cancelled = true }
   }, [noteKey, branch, editor, learning, sid, workspace])
@@ -1030,12 +1022,12 @@ function NotesPanel(props: NotesPanelProps) {
     }, payload.text)
   }
 
-  props.locateRef.current = (sectionId: string): void => {
-    // Badge click in the chapter: bring the editor back if the map view hid
-    // it, then scroll the first matching excerpt into view and flash it.
+  props.locateRef.current = (blockIndex: number): void => {
+    // Marker click in the chapter: bring the editor back if the map view hid
+    // it, then scroll the excerpt of that block into view and flash it.
     setViewMode('edit')
     const container = props.notesScrollRef.current
-    const target = container === null ? null : container.querySelector('[data-ll-section="' + sectionId + '"]')
+    const target = container === null ? null : container.querySelector('[data-ll-block="' + blockIndex + '"]')
     if (target instanceof HTMLElement) {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' })
       target.classList.add(css.excerptHot)

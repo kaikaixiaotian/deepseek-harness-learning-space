@@ -41,12 +41,12 @@ const CHAPTER_HTML = `<!DOCTYPE html><html><head><title>ch</title></head><body>
 
 interface Posted {
   readonly type: string
-  readonly sections?: ReadonlyArray<{ id: string; top: number; height: number; right: number; title: string | null }>
-  readonly blocks?: ReadonlyArray<{ i: number; top: number; right: number }>
+  readonly sections?: ReadonlyArray<{ id: string; title: string | null }>
   readonly sectionId?: string
   readonly id?: number
   readonly text?: string
   readonly blockIndex?: number
+  readonly index?: number
 }
 
 /** Stub seat + the layer script, executed by jsdom's own script runner. */
@@ -100,7 +100,7 @@ async function excerptFrom(dom: JSDOM, paragraphId: string): Promise<Posted> {
 }
 
 describe('anchor layer in a real DOM (read-mode skeleton)', () => {
-  it('reports every section marker with title (nh number stripped)', () => {
+  it('reports the section list (id + title, nh number stripped)', () => {
     const { posted } = mountLayer()
     const report = posted.find(message => message.type === 'll-anchor-report')
     expect(report).toBeDefined()
@@ -125,29 +125,33 @@ describe('anchor layer in a real DOM (read-mode skeleton)', () => {
     expect((await excerptFrom(dom, 'para-intro')).sectionId).toBe('sec-intro')
   })
 
-  it('carries the excerpted block index and reports watched blocks', async () => {
+  it('carries the excerpted block index in the request', async () => {
     const { dom } = mountLayer()
-    const w = dom.window as unknown as { __posted: Posted[]; __flush: () => void }
     // content blocks in document order (toc excluded): obj-p, para-intro,
     // kp-p, h3, li, para-core ← index 5, backfill-h3, backfill-p, practice-p…
     const request = await excerptFrom(dom, 'para-core')
     expect(request.blockIndex).toBe(5)
-    // the host names the anchors' blocks → their geometry rides the report
-    dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: { type: 'll-blocks-watch', indexes: [5, 8] } }))
-    w.__flush()
-    const report = [...w.__posted].reverse().find(message => message.type === 'll-anchor-report')
-    expect(report?.blocks?.map(block => block.i)).toEqual([5, 8])
   })
 
-  it('renders badges from ll-badges and reports locate clicks', () => {
+  it('pins line markers to the excerpted blocks and reports locate clicks', () => {
     const { dom, posted } = mountLayer()
+    const doc = dom.window.document
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
-      data: { type: 'll-badges', counts: { 'sec-core': 2, 'sec-pit': 1 } },
+      data: { type: 'll-block-badges', blocks: [{ i: 5, n: 2 }, { i: 8, n: 1 }] },
     }))
-    const badge = dom.window.document.getElementById('sec-core')?.querySelector('.ll-sec-badge')
-    expect(badge?.textContent).toContain('2')
-    badge?.dispatchEvent(new dom.window.Event('click', { bubbles: true }))
-    expect(posted.some(message => message.type === 'll-locate' && message.sectionId === 'sec-core')).toBe(true)
+    // index 5 = para-core: the marker rides the block itself, first line left
+    const marker = doc.getElementById('para-core')?.querySelector('.ll-block-badge')
+    expect(marker?.textContent).toContain('2')
+    expect(doc.getElementById('para-core')?.classList.contains('ll-block-mark')).toBe(true)
+    expect(doc.getElementById('para-practice')?.querySelector('.ll-block-badge')).not.toBeNull()
+    // blocks without anchors stay unmarked
+    expect(doc.getElementById('para-pit')?.querySelector('.ll-block-badge')).toBeNull()
+    // clicking reports the block index for the host to focus the note
+    marker?.dispatchEvent(new dom.window.Event('click', { bubbles: true }))
+    expect(posted.some(message => message.type === 'll-block-locate' && message.index === 5)).toBe(true)
+    // an empty push clears every marker
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: { type: 'll-block-badges', blocks: [] } }))
+    expect(doc.getElementById('para-core')?.querySelector('.ll-block-badge')).toBeNull()
   })
 
   it('scrolls the target on ll-jump', () => {
